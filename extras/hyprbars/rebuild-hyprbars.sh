@@ -41,8 +41,95 @@ trap 'rm -rf "$work"' EXIT
 src="$work/hyprland-plugins"
 log="$work/build.log"
 file=hyprbars/barDeco.cpp
+header=hyprbars/barDeco.hpp
 
-add_events() {
+# Each bar remembers whether it reported a dragstart, so every dragstart gets
+# exactly one dragend: also when the window closes mid-drag (its bar is
+# destroyed without a release), another window takes focus before the release
+# (hyprbars then returns early), or the button is released over a layer surface
+# such as the Snap Layouts picker (hyprbars ignores input there, so the release
+# is handled before that check). Every anchor must be found, or
+# add_basic_events is used instead.
+add_paired_events() {
+  awk '
+    /^[[:space:]]*bool[[:space:]]+m_bCancelledDown[[:space:]]*=[[:space:]]*false;/ {
+      print
+      print "    bool m_bMoveReported = false;"
+      found++
+      next
+    }
+    { print }
+    END { exit found == 1 ? 0 : 1 }
+  ' "$header" >"$work/barDeco.hpp" || return 1
+  awk '
+    function start(indent) {
+      print indent "if (!m_bMoveReported) {"
+      print indent "    m_bMoveReported = true;"
+      print indent "    g_pEventManager->postEvent(SHyprIPCEvent{\"custom\", \"hyprbars:dragstart\"});"
+      print indent "}"
+    }
+    function end(indent) {
+      print indent "if (m_bMoveReported) {"
+      print indent "    m_bMoveReported = false;"
+      print indent "    if (g_pEventManager)"
+      print indent "        g_pEventManager->postEvent(SHyprIPCEvent{\"custom\", \"hyprbars:dragend\"});"
+      print indent "}"
+    }
+    {
+      match($0, /^[[:space:]]*/)
+      indent = substr($0, 1, RLENGTH)
+    }
+    !included && /^#include/ {
+      print
+      print "#include <hyprland/src/managers/EventManager.hpp>"
+      included = 1
+      next
+    }
+    /^void CHyprBar::onMouseButton\(.*IPointer::SButtonEvent e\)[[:space:]]*\{[[:space:]]*$/ {
+      print
+      print "    // A drag can end over a layer surface, such as the Snap Layouts picker."
+      print "    if (e.state != WL_POINTER_BUTTON_STATE_PRESSED && (m_bDraggingThis || m_bCancelledDown || m_bDragPending)) {"
+      print "        handleUpEvent(info);"
+      print "        return;"
+      print "    }"
+      release = 1
+      next
+    }
+    /^CHyprBar::~CHyprBar\(\)[[:space:]]*\{[[:space:]]*$/ {
+      print
+      end("    ")
+      destructor = 1
+      next
+    }
+    /^void CHyprBar::handleUpEvent\(/ { up = 1 }
+    up && /^}/ { up = 0 }
+    up && /^[[:space:]]*if \(m_pWindow\.lock\(\) != Desktop::focusState\(\)->window\(\)\)[[:space:]]*$/ {
+      condition = $0
+      condition_indent = indent
+      if ((getline next_line) <= 0 || next_line !~ /^[[:space:]]*return;[[:space:]]*$/) {
+        print condition
+        print next_line
+        next
+      }
+      print condition " {"
+      end(condition_indent "    ")
+      print next_line
+      print condition_indent "}"
+      focus = 1
+      next
+    }
+    { print }
+    /"\[hyprbars\] Dragging initiated on.*;[[:space:]]*$/ { start(indent); starts++ }
+    /"\[hyprbars\] Dragging ended on.*;[[:space:]]*$/ { end(indent); ends++ }
+    END { exit included && release && destructor && focus && starts >= 1 && ends >= 1 ? 0 : 1 }
+  ' "$file" >"$work/barDeco.cpp" || return 1
+  cp "$work/barDeco.hpp" "$header"
+  cp "$work/barDeco.cpp" "$file"
+}
+
+# The older way: post right after the log lines. A window closed or a focus
+# change mid-drag can leave a dragstart without its dragend.
+add_basic_events() {
   awk '
     !included && /^#include/ {
       print
@@ -62,6 +149,22 @@ add_events() {
   ' "$file" >"$work/barDeco.cpp"
   cp "$work/barDeco.cpp" "$file"
   grep -q 'hyprbars:dragstart' "$file" && grep -q 'hyprbars:dragend' "$file"
+}
+
+reset_source() {
+  git checkout -q -- "$file" "$header"
+}
+
+# Sets events to paired, basic or no.
+add_events() {
+  if add_paired_events; then
+    events=paired
+  elif reset_source && add_basic_events; then
+    events=basic
+  else
+    reset_source
+    events=no
+  fi
 }
 
 no_drag_warning() {
@@ -86,36 +189,60 @@ else
 fi
 echo "Using hyprland-plugins $(git rev-parse --short HEAD) for Hyprland $hypr_tag."
 
-events=yes
-if ! add_events; then
-  events=no
-  git checkout -q -- "$file"
-fi
+add_events
+
+basic_warning() {
+  echo "WARNING: $1; using simpler drag events." >&2
+  echo "Closing a window or changing focus mid-drag can leave the Snap Layouts picker open." >&2
+}
 
 if [[ $mode == check ]]; then
-  if [[ $events == yes ]]; then
-    git --no-pager diff -U0 -- "$file" | grep '^+[^+]' || true
-    echo "The drag events can be added."
-    exit 0
-  fi
+  case $events in
+    paired)
+      git --no-pager diff -U0 -- "$file" "$header" | grep '^+[^+]' || true
+      echo "The drag events can be added."
+      exit 0 ;;
+    basic)
+      git --no-pager diff -U0 -- "$file" | grep '^+[^+]' || true
+      echo "Only the simpler drag events can be added: some of hyprbars' code has changed." >&2
+      exit 0 ;;
+  esac
   echo "The drag events can't be added: hyprbars' log lines have changed." >&2
   exit 1
 fi
 
-[[ $events == yes ]] || no_drag_warning "the drag events can't be added"
+case $events in
+  basic) basic_warning "some of hyprbars' code has changed" ;;
+  no) no_drag_warning "the drag events can't be added" ;;
+esac
 
-if ! make -C hyprbars >"$log" 2>&1; then
-  if [[ $events == no ]]; then
-    tail -20 "$log" >&2
+build() {
+  make -C hyprbars >"$log" 2>&1
+}
+
+if ! build; then
+  tail -20 "$log" >&2
+  if [[ $events == paired ]]; then
+    basic_warning "the drag events don't compile on this version"
+    reset_source
+    if add_basic_events && build; then
+      events=basic
+    else
+      tail -20 "$log" >&2
+      events=no
+    fi
+  elif [[ $events == basic ]]; then
+    events=no
+  else
     exit 1
   fi
-  no_drag_warning "the drag events don't compile on this version"
-  tail -20 "$log" >&2
-  events=no
-  git checkout -q -- "$file"
-  if ! make -C hyprbars >"$log" 2>&1; then
-    tail -20 "$log" >&2
-    exit 1
+  if [[ $events == no ]]; then
+    no_drag_warning "the drag events don't compile on this version"
+    reset_source
+    if ! build; then
+      tail -20 "$log" >&2
+      exit 1
+    fi
   fi
 fi
 
