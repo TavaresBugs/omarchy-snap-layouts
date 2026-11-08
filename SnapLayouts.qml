@@ -241,7 +241,7 @@ Item {
             return false;
         var ws = c.workspace || {};
         var name = String(ws.name || "");
-        return Number(ws.id) > 0 || name === "special:omarchy-minimized";
+        return Number(ws.id) > 0 || name === "special:minimized";
     }
 
     function refreshCandidates() {

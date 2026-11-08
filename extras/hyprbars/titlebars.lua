@@ -65,5 +65,5 @@ hl.plugin.hyprbars.add_button({
   fg_color = "rgb(5a3d00)",
   size = 13,
   icon = "–",
-  action = [[hyprctl dispatch "hl.dsp.window.move({ workspace = 'special:omarchy-minimized', follow = false })"]],
+  action = [[hyprctl dispatch "hl.dsp.window.move({ workspace = 'special:minimized', follow = false })"]],
 })
