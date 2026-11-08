@@ -255,11 +255,17 @@ if [[ $mode == build ]]; then
   exit 0
 fi
 
-# A config reload won't reload a plugin path that is already registered, so
-# swap the running copy and load it explicitly.
-hyprctl plugin unload "$dest/libhyprbars.so" >/dev/null 2>&1 || true
 mv "$dest/libhyprbars.so.new" "$dest/libhyprbars.so"
-hyprctl plugin load "$dest/libhyprbars.so" >/dev/null
 
+# Never swap a running hyprbars. Hyprland 0.56 lists loaded plugins without a
+# path, so unloading by path fails and the load adds a second copy. Two copies
+# share one set of settings, unloading either breaks the other, and windows end
+# up with mismatched title bars.
+if hyprctl plugin list 2>/dev/null | grep -q '^Plugin hyprbars '; then
+  echo "Installed $dest/libhyprbars.so (drag events: $events)."
+  echo "hyprbars is already running, so log out and back in to use the new build."
+  exit 0
+fi
+
+hyprctl plugin load "$dest/libhyprbars.so" >/dev/null
 echo "Installed and loaded $dest/libhyprbars.so (drag events: $events)."
-echo "If the title bars still don't show, log out and back in."
