@@ -20,6 +20,7 @@ Fixed
 - Drag detection recognises tiled windows as well as floating ones.
 
 Changed
+- Tested on Omarchy 4.5.0; README install and uninstall steps cover the Alt+Tab binding, window limits, title bars and options.
 - The code is split into `lib/` (pure logic, `npm test`), `components/` (views) and `SnapLayouts.qml` (state and Hyprland I/O).
 
 ## 0.1.0

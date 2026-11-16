@@ -1,10 +1,10 @@
 # Snap Layouts for Omarchy
 
-[![Omarchy 4 (Quattro) ready](https://img.shields.io/badge/Omarchy_4_(Quattro)-ready-2ea44f)](#compatibility)
+[![Omarchy 4.5 (Quattro) ready](https://img.shields.io/badge/Omarchy_4.5_(Quattro)-ready-2ea44f)](#compatibility)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 ![Hyprland 0.56](https://img.shields.io/badge/Hyprland-0.56-58e1ff)
 
-Drag a window to the top of the screen, drop it on the layout you want, then choose which windows fill the other spaces. A snap layout picker in the style of Windows 11, built as a shell plugin for [Omarchy](https://omarchy.org). **Omarchy 4 (Quattro) ready.**
+Drag a window to the top of the screen, drop it on the layout you want, then choose which windows fill the other spaces. A snap layout picker in the style of Windows 11, built as a shell plugin for [Omarchy](https://omarchy.org). **Omarchy 4.5 (Quattro) ready.**
 
 This fork adds edge and corner snapping and an Alt+Tab style window overview, and splits the code into tested modules. See [What this fork adds](#what-this-fork-adds).
 
@@ -39,10 +39,11 @@ omarchy plugin add https://github.com/TavaresBugs/omarchy-snap-layouts --enable
 
 The first time it loads, a prompt asks whether to keep drag-to-snap on.
 
-To open the picker with Super+Z as well, add this line to `~/.config/hypr/bindings.lua`:
+To open the picker with Super+Z, and the window overview with Alt+Tab, add these lines to `~/.config/hypr/bindings.lua`:
 
 ```lua
 o.bind("SUPER + Z", "Snap layouts", hl.dsp.event("io.github.n0rthstar88.snap-layouts:toggle"))
+o.bind("ALT + TAB", "Window overview", hl.dsp.event("io.github.n0rthstar88.snap-layouts:overview"))
 ```
 
 ## Use
@@ -170,7 +171,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Optional Hyprland config that 
 
 ## Compatibility
 
-Built and tested on **Omarchy 4.0.6 (Quattro)** with Hyprland 0.56.2 and Quickshell 0.3.2. It uses Omarchy's shell plugin system and Hyprland's Lua config, so older Omarchy releases and other desktops won't work.
+Built and tested on **Omarchy 4.5.0 (Quattro)** with Hyprland 0.56.2 and Quickshell 0.3.2. It uses Omarchy's shell plugin system and Hyprland's Lua config, so older Omarchy releases and other desktops won't work.
 
 Testing covered dragging by title bar and by a Hyprland mouse bind, snap assist, the picker commands, turning drag-to-snap off, and snapping a tiled window. Those checks ran on a single screen. Zones are worked out per monitor, but multi-monitor, scaled and rotated setups weren't part of them.
 
@@ -187,7 +188,14 @@ Testing covered dragging by title bar and by a Hyprland mouse bind, snap assist,
 omarchy plugin remove io.github.n0rthstar88.snap-layouts
 ```
 
-Then delete the Super+Z line from `bindings.lua` if you added it. The plugin's mouse binds go away the next time Hyprland reloads its config.
+Then undo whatever you added by hand:
+
+- **Key bindings:** delete the Super+Z and Alt+Tab lines from `~/.config/hypr/bindings.lua`.
+- **Window limits** (if you installed [the extra](extras/hyprland/README.md#window-limits)): remove `require("hypr.window-limits")` from `~/.config/hypr/hyprland.lua` and delete `~/.config/hypr/window-limits.lua`.
+- **Title bars** (if you installed them): follow [Remove](extras/hyprbars/README.md#remove).
+- **Options:** if an entry with this plugin's id is still in `~/.config/omarchy/shell.json`, delete it. It holds your options, including the main screen chosen in the overview.
+
+Run `hyprctl reload` afterwards. The plugin's mouse binds go away the next time Hyprland reloads its config.
 
 ## Contributing and security
 
