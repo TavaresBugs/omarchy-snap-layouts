@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
@@ -30,7 +31,7 @@ Item {
     // innerGap: space between snapped windows (0 = flush, borders touching).
     // borderSize must match Hyprland's general.border_size. Hyprland's Lua
     // config doesn't report these through `hyprctl getoption`, so they are set here.
-    readonly property int outerGap: 10
+    readonly property int outerGap: 2
     readonly property int innerGap: 0
     readonly property int borderSize: 2
     // titleBarHeight must match hyprbars' bar_height. The bar is drawn above
@@ -50,8 +51,12 @@ Item {
         [[0, 0, 1 / 3, 1], [1 / 3, 0, 2 / 3, 1]],
         [[0, 0, 1 / 3, 1], [1 / 3, 0, 1 / 3, 1], [2 / 3, 0, 1 / 3, 1]],
         [[0, 0, 0.5, 1], [0.5, 0, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]],
-        [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]]
+        [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]],
+        // Not shown in the picker: the whole usable area, used by edge snap.
+        [[0, 0, 1, 1]]
     ]
+    readonly property int pickerCount: 6
+
 
     // "" hidden, "picker" (Super+Z), "drag" (window held at the top edge),
     // "assist" (choosing windows for the remaining zones).
@@ -67,6 +72,242 @@ Item {
 
     property int hoverLayout: -1
     property int hoverZone: -1
+
+    // Edge/corner snap: hold a dragged window against a screen edge or corner,
+    // wait a moment, and a preview of the landing zone fades in. Releasing
+    // snaps the window there; moving away cancels.
+    readonly property int edgeMargin: 12
+    readonly property int edgeCorner: 90
+    readonly property int edgeDwellMs: 320
+    property string edgePending: ""
+    property double edgePendingAt: 0
+
+    // Snap assist is paged: at most assistPageSize windows per page.
+    readonly property int assistPageSize: 6
+    property int assistPage: 0
+    function assistGo(delta) {
+        var pages = Math.max(1, Math.ceil(root.candidates.length / root.assistPageSize));
+        root.assistPage = Math.max(0, Math.min(pages - 1, root.assistPage + delta));
+    }
+
+    // Window overview (Alt+Tab): every open window, pick one to bring forward.
+    property int overviewIndex: 0
+    // Which keycap in the hint bar is lit for a moment after the key is pressed.
+    property string hintFlash: ""
+    function flashHint(key) {
+        root.hintFlash = key;
+        hintFlashTimer.restart();
+    }
+    Timer {
+        id: hintFlashTimer
+        interval: 170
+        onTriggered: root.hintFlash = ""
+    }
+    property var overviewRects: []
+    // 0 = every window sits where it really is, 1 = settled in the overview.
+    property real overviewT: 1
+    NumberAnimation {
+        id: overviewAnim
+        target: root
+        property: "overviewT"
+        from: 0
+        to: 1
+        duration: 260
+        easing.type: Easing.OutCubic
+    }
+
+    // Rows of equal-height thumbnails, like GNOME's overview: stable and tidy.
+    // Windows keep the reading order of where they really are (top to bottom in
+    // bands, left to right inside a band). The number of rows is whichever
+    // lets the thumbnails come out biggest. The result is returned in the same
+    // order as `list`, each with its real rect (rx..rh) for the opening animation.
+    function overviewLayout(list, ax, ay, aw, ah) {
+        var n = list.length;
+        var gapX = 40, gapY = 62;
+        var items = [];
+        for (var i = 0; i < n; i++) {
+            var c = list[i];
+            var m = root.monitorById(c.monitor) || root.monitor;
+            var rw = Math.max(1, c.size[0]), rh = Math.max(1, c.size[1]);
+            var lx = c.at[0] - m.x, ly = c.at[1] - m.y;
+            items.push({
+                i: i,
+                aspect: Math.max(0.55, Math.min(2.6, rw / rh)),
+                cx: lx + rw / 2,
+                cy: ly + rh / 2,
+                band: Math.floor((ly + rh / 2) / (m.h * 0.4)),
+                rx: lx, ry: ly, rw: rw, rh: rh
+            });
+        }
+        var order = items.slice().sort(function(p, q) {
+            if (p.band !== q.band)
+                return p.band - q.band;
+            return p.cx - q.cx;
+        });
+
+        // 1 -> 1 | 2 -> 2 side by side | 3 -> 2 + 1 | 4 -> 2 + 2 | 5 -> 3 + 2 | 6 -> 3 + 3 | ...
+        var cols = n <= 2 ? n : (n <= 4 ? 2 : (n <= 6 ? 3 : 4));
+        var rows = [];
+        for (var pos = 0; pos < n; pos += cols)
+            rows.push(order.slice(pos, pos + cols));
+        var R = rows.length;
+
+        // One common height for every row; it must fit the widest row and the
+        // total height, and it is capped so a lone window isn't enormous.
+        var hFit = 1e9;
+        for (var r = 0; r < R; r++) {
+            var sumA = 0;
+            for (var q = 0; q < rows[r].length; q++)
+                sumA += rows[r][q].aspect;
+            hFit = Math.min(hFit, (aw - gapX * (rows[r].length - 1)) / sumA);
+        }
+        var best = { h: Math.min(hFit, (ah - gapY * (R - 1)) / R, ah * 0.62), rows: rows };
+
+        var out = new Array(n);
+        var rowsB = best.rows;
+        var totalH = best.h * rowsB.length + gapY * (rowsB.length - 1);
+        var y = ay + Math.max(0, (ah - totalH) / 2);
+        for (var rr = 0; rr < rowsB.length; rr++) {
+            var rowW = gapX * (rowsB[rr].length - 1);
+            for (var w = 0; w < rowsB[rr].length; w++)
+                rowW += rowsB[rr][w].aspect * best.h;
+            var x = ax + (aw - rowW) / 2;
+            for (var u = 0; u < rowsB[rr].length; u++) {
+                var it = rowsB[rr][u];
+                var width = it.aspect * best.h;
+                out[it.i] = {
+                    x: Math.round(x), y: Math.round(y),
+                    w: Math.round(width), h: Math.round(best.h),
+                    rx: it.rx, ry: it.ry, rw: it.rw, rh: it.rh
+                };
+                x += width + gapX;
+            }
+            y += best.h + gapY;
+        }
+        return out;
+    }
+
+    // Arrow keys: the nearest window in that direction from the selected one.
+    // Windows lying more sideways than the direction asked (a cone) are penalised.
+    function overviewNeighbor(dir) {
+        var rects = root.overviewRects;
+        var cur = rects[root.overviewIndex];
+        if (!cur)
+            return;
+        var horizontal = dir === "left" || dir === "right";
+        var cx = cur.x + cur.w / 2, cy = cur.y + cur.h / 2;
+        var best = -1, bestScore = 1e9;
+        for (var i = 0; i < rects.length; i++) {
+            if (i === root.overviewIndex)
+                continue;
+            var dx = rects[i].x + rects[i].w / 2 - cx;
+            var dy = rects[i].y + rects[i].h / 2 - cy;
+            if ((dir === "up" && dy >= -4) || (dir === "down" && dy <= 4)
+                    || (dir === "left" && dx >= -4) || (dir === "right" && dx <= 4))
+                continue;
+            var score = horizontal ? Math.abs(dx) + 2.5 * Math.abs(dy)
+                                   : Math.abs(dy) + 2.5 * Math.abs(dx);
+            if (score < bestScore) {
+                bestScore = score;
+                best = i;
+            }
+        }
+        if (best >= 0)
+            root.overviewIndex = best;
+    }
+
+    function toggleOverview() {
+        if (root.mode === "overview")
+            root.close();
+        else if (!root.opened)
+            root.requestSnapshot("overview");
+    }
+
+    function startOverview() {
+        var m = root.activeIpc ? root.monitorById(root.activeIpc.monitor) : null;
+        if (!m && root.monitors.length > 0)
+            m = root.monitors[0];
+        if (!m)
+            return;
+        var list = [];
+        for (var i = 0; i < root.clients.length; i++)
+            if (root.isSnappable(root.clients[i]))
+                list.push(root.clients[i]);
+        if (list.length === 0)
+            return;
+        // Workspace order first (minimized last), then most recently used.
+        list.sort(function(a, b) {
+            var wa = Number(a.workspace.id) > 0 ? Number(a.workspace.id) : 1000;
+            var wb = Number(b.workspace.id) > 0 ? Number(b.workspace.id) : 1000;
+            if (wa !== wb)
+                return wa - wb;
+            return Number(a.focusHistoryID) - Number(b.focusHistoryID);
+        });
+        // Start on the window used just before the current one, like Alt+Tab.
+        var start = 0, best = 1e9;
+        for (var j = 0; j < list.length; j++) {
+            var h = Number(list[j].focusHistoryID);
+            if (h > 0 && h < best) {
+                best = h;
+                start = j;
+            }
+        }
+        root.monitor = m;
+        root.targetAddress = "";
+        root.placedAddresses = [];
+        root.candidates = list;
+        root.overviewIndex = start;
+        root.assistPage = 0;
+        var top = m.reserved[1] + 50;
+        root.overviewRects = root.overviewLayout(list, 70, top, m.w - 140, m.h - top - 120);
+        root.overviewT = 0;
+        root.mode = "overview";
+        overviewAnim.restart();
+    }
+
+    function overviewMove(delta) {
+        var n = root.candidates.length;
+        if (n === 0)
+            return;
+        root.overviewIndex = ((root.overviewIndex + delta) % n + n) % n;
+    }
+
+    // Bring a window to the front: restore it if minimized, switch to its
+    // workspace, focus it, and raise it above any floating windows on top.
+    function focusWindow(address) {
+        var c = root.clientByAddress(address);
+        var sel = "address:" + address;
+        var lua = [];
+        // A tiled window can't be raised above floating ones, so the floating
+        // windows covering it join the mosaic instead: everything stays tiled,
+        // visible side by side, and resizable.
+        if (c && c.floating === false && c.workspace && Number(c.workspace.id) > 0) {
+            for (var k = 0; k < root.clients.length; k++) {
+                var o = root.clients[k];
+                if (o.address === c.address || !o.floating || o.pinned || Number(o.fullscreen) > 0)
+                    continue;
+                if (!o.workspace || Number(o.workspace.id) !== Number(c.workspace.id))
+                    continue;
+                var overlaps = o.at[0] < c.at[0] + c.size[0] && o.at[0] + o.size[0] > c.at[0]
+                    && o.at[1] < c.at[1] + c.size[1] && o.at[1] + o.size[1] > c.at[1];
+                if (overlaps)
+                    lua.push("hl.dispatch(hl.dsp.window.float({ action = 'off', window = 'address:" + o.address + "' }))");
+            }
+        }
+        if (c && c.workspace && String(c.workspace.name) === "special:minimized" && root.monitor)
+            lua.push("hl.dispatch(hl.dsp.window.move({ workspace = '" + root.monitor.workspaceId + "', window = '" + sel + "' }))");
+        lua.push("hl.dispatch(hl.dsp.focus({ window = '" + sel + "' }))");
+        lua.push("hl.dispatch(hl.dsp.window.bring_to_top())");
+        Quickshell.execDetached(["hyprctl", "eval", lua.join("; ")]);
+        root.close();
+    }
+
+    // The overview panel covers the usable area of the screen, with a margin.
+    function overviewRect() {
+        var r = root.zoneScreenRect(6, 0);
+        var inset = 28;
+        return { x: r.x + inset, y: r.y + inset, w: r.w - 2 * inset, h: r.h - 2 * inset };
+    }
 
     property int assistLayout: -1
     property var assistZones: []
@@ -140,9 +381,9 @@ Item {
     }
 
     // The picker card, in coordinates local to the monitor's overlay.
-    readonly property int cardPadding: 14
+    readonly property int cardPadding: 16
     readonly property int thumbGap: 12
-    readonly property int thumbHeight: 64
+    readonly property int thumbHeight: 76
 
     function thumbWidth() {
         var aspect = root.monitor ? root.monitor.w / root.monitor.h : 16 / 9;
@@ -150,7 +391,7 @@ Item {
     }
 
     function cardRect() {
-        var n = root.layouts.length;
+        var n = root.pickerCount;
         var w = 2 * root.cardPadding + n * root.thumbWidth() + (n - 1) * root.thumbGap;
         var h = 2 * root.cardPadding + root.thumbHeight;
         var mw = root.monitor ? root.monitor.w : w;
@@ -184,7 +425,7 @@ Item {
     }
 
     function hitTest(lx, ly) {
-        for (var i = 0; i < root.layouts.length; i++) {
+        for (var i = 0; i < root.pickerCount; i++) {
             var t = root.thumbRect(i);
             if (lx < t.x || lx >= t.x + t.w || ly < t.y || ly >= t.y + t.h)
                 continue;
@@ -266,7 +507,12 @@ Item {
         var r = root.zoneScreenRect(layoutIndex, zoneIndex);
         var c = root.clientByAddress(address);
         var sel = "address:" + address;
-        var bar = root.hasTitleBars ? root.titleBarHeight : 0;
+        // Only windows on a floating workspace carry a title bar; on a tiled
+        // workspace nothing is drawn above the window, so no offset.
+        var hasBar = root.hasTitleBars && c && (c.tags || []).some(function(t) {
+            return String(t).replace("*", "") === "omarchy-floating-workspace";
+        });
+        var bar = hasBar ? root.titleBarHeight : 0;
         var lua = [];
         if (c && c.workspace && Number(c.workspace.id) !== root.monitor.workspaceId)
             lua.push("hl.dispatch(hl.dsp.window.move({ workspace = '" + root.monitor.workspaceId
@@ -304,6 +550,8 @@ Item {
         if (root.mode === "")
             return;
         root.mode = "";
+        root.assistPage = 0;
+        root.edgePending = "";
         root.hoverLayout = -1;
         root.hoverZone = -1;
         root.assistLayout = -1;
@@ -411,6 +659,8 @@ Item {
                 });
                 if (root.snapshotReason === "picker")
                     root.startPicker();
+                else if (root.snapshotReason === "overview")
+                    root.startOverview();
                 else if (root.snapshotReason === "press" && root.buttonDown) {
                     root.dragStart = root.positionsOf(root.clients);
                     dragPoll.start();
@@ -440,7 +690,7 @@ Item {
             // missed release event can't leave this running forever either.
             if ((!root.dragging && held > 1500) || held > 60000) {
                 stop();
-                if (root.mode === "drag")
+                if (root.mode === "drag" || root.mode === "hint" || root.mode === "edge")
                     root.close();
                 return;
             }
@@ -456,6 +706,37 @@ Item {
         for (var i = 0; i < (list || []).length; i++)
             map[list[i].address] = { at: list[i].at, size: list[i].size };
         return map;
+    }
+
+    // Which zone the pointer is asking for, if it is against an edge/corner.
+    // Layout 0 = halves, layout 5 = quarters.
+    function edgeTarget(m, cur) {
+        var lx = cur.x - m.x;
+        var ly = cur.y - m.y;
+        var E = root.edgeMargin;
+        var C = root.edgeCorner;
+        var nearL = lx <= E, nearR = lx >= m.w - E;
+        var nearT = ly <= E, nearB = ly >= m.h - E;
+        var cL = lx <= C, cR = lx >= m.w - C;
+        var cT = ly <= C, cB = ly >= m.h - C;
+        var layout = -1, zone = -1;
+        if ((nearL && cT) || (nearT && cL)) { layout = 5; zone = 0; }
+        else if ((nearR && cT) || (nearT && cR)) { layout = 5; zone = 1; }
+        else if ((nearL && cB) || (nearB && cL)) { layout = 5; zone = 2; }
+        else if ((nearR && cB) || (nearB && cR)) { layout = 5; zone = 3; }
+        else if (nearT) { layout = 6; zone = 0; }
+        else if (nearL) { layout = 0; zone = 0; }
+        else if (nearR) { layout = 0; zone = 1; }
+        if (layout < 0)
+            return null;
+        return { layout: layout, zone: zone, key: layout + ":" + zone };
+    }
+
+    // Edge snap is a quick fit: place the window and stop, no snap assist.
+    function quickSnap(layoutIndex, zoneIndex) {
+        if (layoutIndex >= 0 && zoneIndex >= 0 && root.targetAddress)
+            root.placeWindow(root.targetAddress, layoutIndex, zoneIndex);
+        root.close();
     }
 
     function handleDragSample(s) {
@@ -474,7 +755,7 @@ Item {
                 continue;
             }
             var start = root.dragStart[c.address];
-            if (!start || !c.floating || Number(c.fullscreen) > 0)
+            if (!start || Number(c.fullscreen) > 0)
                 continue;
             var moved = Math.abs(c.at[0] - start.at[0]) > 4 || Math.abs(c.at[1] - start.at[1]) > 4;
             var sameSize = c.size[0] === start.size[0] && c.size[1] === start.size[1];
@@ -491,6 +772,33 @@ Item {
         var m = root.monitorAt(cur.x, cur.y);
         if (!m)
             return;
+        var edge = root.edgeTarget(m, cur);
+        if (edge) {
+            if (root.mode === "edge") {
+                root.hoverLayout = edge.layout;
+                root.hoverZone = edge.zone;
+                return;
+            }
+            if (root.edgePending !== edge.key) {
+                root.edgePending = edge.key;
+                root.edgePendingAt = Date.now();
+            } else if (Date.now() - root.edgePendingAt >= root.edgeDwellMs && root.mode !== "picker" && root.mode !== "assist") {
+                root.monitor = m;
+                root.targetAddress = win.address;
+                root.hoverLayout = edge.layout;
+                root.hoverZone = edge.zone;
+                root.mode = "edge";
+                return;
+            }
+        } else {
+            root.edgePending = "";
+            if (root.mode === "edge") {
+                root.hoverLayout = -1;
+                root.hoverZone = -1;
+                root.close();
+                return;
+            }
+        }
         var nearTop = cur.y - m.y <= root.dragTriggerDistance;
         if (root.mode === "" && nearTop) {
             root.monitor = m;
@@ -533,7 +841,12 @@ Item {
         root.buttonDown = false;
         dragPoll.stop();
         root.dragging = false;
-        if (root.mode !== "drag")
+        root.edgePending = "";
+        if (root.mode === "hint") {
+            root.close();
+            return;
+        }
+        if (root.mode !== "drag" && root.mode !== "edge")
             return;
         var layoutIndex = root.hoverLayout;
         var zoneIndex = root.hoverZone;
@@ -557,7 +870,9 @@ Item {
                 } catch (e) {}
                 var drop = root.pendingDrop;
                 root.pendingDrop = null;
-                if (drop && root.mode === "drag")
+                if (drop && root.mode === "edge")
+                    root.quickSnap(drop.layout, drop.zone);
+                else if (drop && root.mode === "drag")
                     root.chooseZone(drop.layout, drop.zone);
             }
         }
@@ -575,6 +890,8 @@ Item {
                 return;
             if (event.data === "io.github.n0rthstar88.snap-layouts:toggle")
                 root.toggle();
+            else if (event.data === "io.github.n0rthstar88.snap-layouts:overview")
+                root.toggleOverview();
             // Title-bar drags (hyprbars) swallow the mouse button, so the
             // press/release binds never fire; hyprbars reports them itself.
             else if (event.data === "io.github.n0rthstar88.snap-layouts:press" || event.data === "hyprbars:dragstart")
@@ -592,6 +909,19 @@ Item {
         }
         function close(): string {
             root.close();
+            return "ok";
+        }
+        function overview(): string {
+            root.toggleOverview();
+            return "ok";
+        }
+        // Bring a window forward by address, as choosing it in the overview does.
+        function focus(address: string): string {
+            if (root.clients.length === 0) {
+                root.requestSnapshot("none");
+                return "no snapshot yet; try again";
+            }
+            root.focusWindow(address);
             return "ok";
         }
         // Drag-to-snap: `drag on`, `drag off`, or `drag status`.
@@ -881,10 +1211,14 @@ Item {
             color: "transparent"
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "snap-layouts"
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: root.mode === "drag" ? WlrKeyboardFocus.None : WlrKeyboardFocus.Exclusive
+            // The overview sits just under the notifications (Overlay layer), but a
+            // fullscreen window hides the Top layer, so there it stays on Overlay.
+            WlrLayershell.layer: (root.mode === "overview"
+                    && !(root.activeIpc && Number(root.activeIpc.fullscreen) > 0))
+                ? WlrLayer.Top : WlrLayer.Overlay
+            WlrLayershell.keyboardFocus: (root.mode === "drag" || root.mode === "edge" || root.mode === "hint") ? WlrKeyboardFocus.None : WlrKeyboardFocus.Exclusive
             // While a window is being dragged the overlay must not take the pointer.
-            mask: root.mode === "drag" ? noInput : null
+            mask: (root.mode === "drag" || root.mode === "edge" || root.mode === "hint") ? noInput : null
 
             Region {
                 id: noInput
@@ -896,8 +1230,42 @@ Item {
                 focus: true
                 Keys.onEscapePressed: root.close()
                 Keys.onPressed: function(event) {
-                    if (root.mode === "assist" && event.key === Qt.Key_Tab) {
+                    if (root.mode === "overview") {
+                        if (event.key === Qt.Key_Tab) {
+                            root.overviewMove(1);
+                        } else if (event.key === Qt.Key_Backtab) {
+                            root.overviewMove(-1);
+                        } else if (event.key === Qt.Key_Right) {
+                            root.overviewNeighbor("right");
+                        } else if (event.key === Qt.Key_Left) {
+                            root.overviewNeighbor("left");
+                        }
+                        else if (event.key === Qt.Key_Down)
+                            root.overviewNeighbor("down");
+                        else if (event.key === Qt.Key_Up)
+                            root.overviewNeighbor("up");
+                        else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                            root.focusWindow(root.candidates[root.overviewIndex].address);
+                        else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
+                            var jump = event.key - Qt.Key_1;
+                            if (jump < root.candidates.length)
+                                root.focusWindow(root.candidates[jump].address);
+                        } else
+                            return;
+                        event.accepted = true;
+                    } else if (root.mode === "assist" && event.key === Qt.Key_Tab) {
                         root.assistSkip();
+                        event.accepted = true;
+                    } else if (root.mode === "assist" && event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
+                        var pick = root.assistPage * root.assistPageSize + (event.key - Qt.Key_1);
+                        if (pick < root.candidates.length)
+                            root.assistPick(root.candidates[pick].address);
+                        event.accepted = true;
+                    } else if (root.mode === "assist" && (event.key === Qt.Key_Right || event.key === Qt.Key_PageDown)) {
+                        root.assistGo(1);
+                        event.accepted = true;
+                    } else if (root.mode === "assist" && (event.key === Qt.Key_Left || event.key === Qt.Key_PageUp)) {
+                        root.assistGo(-1);
                         event.accepted = true;
                     }
                 }
@@ -905,7 +1273,7 @@ Item {
                 // Click outside the card or the assist panel to cancel.
                 MouseArea {
                     anchors.fill: parent
-                    enabled: root.mode !== "drag"
+                    enabled: root.mode !== "drag" && root.mode !== "edge" && root.mode !== "hint"
                     onClicked: root.close()
                 }
 
@@ -926,10 +1294,183 @@ Item {
                     y: r ? r.y - root.monitor.y : 0
                     width: r ? r.w : 0
                     height: r ? r.h : 0
-                    radius: Style.cornerRadius
-                    color: root.withAlpha(Commons.Color.accent, 0.18)
-                    border.color: root.withAlpha(Commons.Color.accent, 0.8)
+                    radius: Style.cornerRadius + 2
+                    color: root.withAlpha(Commons.Color.accent, 0.22)
+                    border.color: root.withAlpha(Commons.Color.accent, 0.9)
                     border.width: 2
+                    opacity: visible ? 1 : 0
+                    scale: visible ? 1 : 0.96
+                    Behavior on opacity { NumberAnimation { duration: 140 } }
+                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                    Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                    Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                    Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                }
+
+                // ----- Window overview -----
+                // No panel and no heavy selection: a clean backdrop, each window
+                // near its real position, and a thin ring on the selected one.
+                Item {
+                    id: overviewLayer
+                    anchors.fill: parent
+                    visible: root.mode === "overview"
+
+                    // Clean backdrop: the wallpaper, dimmed, hiding the real windows.
+                    // It starts under the bar, so the bar stays visible and usable.
+                    Item {
+                        anchors.fill: parent
+                        anchors.topMargin: root.monitor ? root.monitor.reserved[1] : 0
+                        opacity: root.overviewT
+
+                        Rectangle {
+                            anchors.fill: parent
+                            color: Commons.Color.background
+                        }
+
+                        Image {
+                            anchors.fill: parent
+                            source: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/current/background"
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: true
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            color: "black"
+                            opacity: 0.55
+                        }
+                    }
+
+                    Repeater {
+                        model: root.mode === "overview" ? root.overviewRects.length : 0
+
+                        Item {
+                            id: ocard
+                            required property int index
+                            readonly property var rc: root.overviewRects[index]
+                            readonly property var cl: root.candidates[index]
+                            readonly property bool selected: index === root.overviewIndex
+                            x: rc ? rc.rx + (rc.x - rc.rx) * root.overviewT : 0
+                            y: rc ? rc.ry + (rc.y - rc.ry) * root.overviewT : 0
+                            width: rc ? rc.rw + (rc.w - rc.rw) * root.overviewT : 0
+                            height: rc ? rc.rh + (rc.h - rc.rh) * root.overviewT : 0
+                            z: selected ? 10 : 0
+                            opacity: selected ? 1 : 0.9
+                            scale: selected ? 1.05 : 1
+                            Behavior on opacity { NumberAnimation { duration: 140 } }
+                            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                            transform: Translate {
+                                y: ocard.selected ? -6 : 0
+                                Behavior on y { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                            }
+
+                            // Soft shadow under the window, deeper for the selected one.
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: -2
+                                anchors.topMargin: 3
+                                anchors.bottomMargin: -9
+                                radius: 14
+                                color: "black"
+                                opacity: ocard.selected ? 0.5 : 0.3
+                                Behavior on opacity { NumberAnimation { duration: 140 } }
+                            }
+
+                            Item {
+                                id: oshot
+                                anchors.fill: parent
+                                layer.enabled: true
+                                layer.smooth: true
+                                layer.effect: MultiEffect {
+                                    maskEnabled: true
+                                    maskSource: omask
+                                    maskThresholdMin: 0.3
+                                    maskSpreadAtMin: 0.3
+                                }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    color: root.withAlpha(Commons.Color.popups.background, 0.9)
+                                }
+
+                                ScreencopyView {
+                                    id: opreview
+                                    readonly property var source: ocard.cl ? root.toplevelFor(ocard.cl.address) : null
+                                    anchors.fill: parent
+                                    captureSource: source && source.wayland ? source.wayland : null
+                                    live: false
+                                    paintCursor: false
+                                }
+                            }
+
+                            Rectangle {
+                                id: omask
+                                anchors.fill: parent
+                                visible: false
+                                layer.enabled: true
+                                radius: 10
+                                color: "black"
+                            }
+
+                            // Thin, quiet selection ring.
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 10
+                                color: "transparent"
+                                border.color: root.withAlpha(Commons.Color.popups.text, 0.85)
+                                border.width: 2
+                                opacity: ocard.selected ? 1 : 0
+                                Behavior on opacity { NumberAnimation { duration: 120 } }
+                            }
+
+                            // Minimized or uncapturable windows show their icon.
+                            Image {
+                                anchors.centerIn: parent
+                                visible: !opreview.hasContent && ocard.cl
+                                width: Math.min(56, parent.height * 0.5)
+                                height: width
+                                source: ocard.cl ? root.iconFor(ocard.cl) : ""
+                                sourceSize.width: 112
+                                sourceSize.height: 112
+                            }
+
+                            // App icon on the bottom edge, as in Zorin.
+                            Image {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                y: parent.height - height * 0.5
+                                width: 40
+                                height: 40
+                                source: ocard.cl ? root.iconFor(ocard.cl) : ""
+                                sourceSize.width: 80
+                                sourceSize.height: 80
+                            }
+
+                            // Title, only for the selected window.
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                y: parent.height + 24
+                                width: Math.max(parent.width, 200)
+                                horizontalAlignment: Text.AlignHCenter
+                                text: ocard.cl ? String(ocard.cl.title || ocard.cl.class || "") : ""
+                                color: root.withAlpha(Commons.Color.popups.text, 0.9)
+                                font.family: Qt.application.font.family
+                                font.pixelSize: Style.font.body
+                                elide: Text.ElideRight
+                                opacity: ocard.selected ? 1 : 0
+                                Behavior on opacity { NumberAnimation { duration: 120 } }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onEntered: root.overviewIndex = ocard.index
+                                onClicked: root.focusWindow(ocard.cl.address)
+                            }
+                        }
+                    }
                 }
 
                 // ----- Layout picker card -----
@@ -941,10 +1482,15 @@ Item {
                     y: r.y
                     width: r.w
                     height: r.h
-                    radius: Style.cornerRadius + 4
-                    color: Commons.Color.popups.background
-                    border.color: Commons.Color.popups.border
+                    radius: Style.cornerRadius + 10
+                    color: root.withAlpha(Commons.Color.popups.background, 0.96)
+                    border.color: root.withAlpha(Commons.Color.accent, 0.45)
                     border.width: 1
+                    opacity: visible ? 1 : 0
+                    scale: visible ? 1 : 0.94
+                    transformOrigin: Item.Top
+                    Behavior on opacity { NumberAnimation { duration: 150 } }
+                    Behavior on scale { NumberAnimation { duration: 170; easing.type: Easing.OutBack } }
 
                     // Swallow clicks on the card background.
                     MouseArea {
@@ -952,7 +1498,7 @@ Item {
                     }
 
                     Repeater {
-                        model: root.layouts.length
+                        model: root.pickerCount
 
                         Rectangle {
                             id: thumb
@@ -962,10 +1508,16 @@ Item {
                             y: r.y - card.r.y
                             width: r.w
                             height: r.h
-                            radius: Style.cornerRadius
-                            color: root.withAlpha(Commons.Color.popups.text, 0.06)
-                            border.color: root.withAlpha(Commons.Color.popups.text, root.hoverLayout === index ? 0.5 : 0.18)
-                            border.width: 1
+                            radius: Style.cornerRadius + 2
+                            color: root.hoverLayout === index
+                                ? root.withAlpha(Commons.Color.accent, 0.14)
+                                : root.withAlpha(Commons.Color.popups.text, 0.05)
+                            border.color: root.hoverLayout === index
+                                ? root.withAlpha(Commons.Color.accent, 0.85)
+                                : root.withAlpha(Commons.Color.popups.text, 0.14)
+                            border.width: root.hoverLayout === index ? 2 : 1
+                            Behavior on color { ColorAnimation { duration: 90 } }
+                            Behavior on border.color { ColorAnimation { duration: 90 } }
 
                             Repeater {
                                 model: root.layouts[thumb.index].length
@@ -979,8 +1531,8 @@ Item {
                                     y: zr.y
                                     width: zr.w
                                     height: zr.h
-                                    radius: Math.max(2, Style.cornerRadius / 2)
-                                    color: hot ? Commons.Color.accent : root.withAlpha(Commons.Color.popups.text, 0.22)
+                                    radius: Math.max(3, Style.cornerRadius / 2 + 1)
+                                    color: hot ? Commons.Color.accent : root.withAlpha(Commons.Color.popups.text, 0.28)
 
                                     Behavior on color {
                                         ColorAnimation { duration: 80 }
@@ -1046,121 +1598,331 @@ Item {
                     y: r ? r.y - root.monitor.y : 0
                     width: r ? r.w : 0
                     height: r ? r.h : 0
-                    radius: Style.cornerRadius + 4
-                    color: root.withAlpha(Commons.Color.popups.background, 0.94)
-                    border.color: Commons.Color.accent
+                    radius: Style.cornerRadius + 10
+                    color: root.withAlpha(Commons.Color.popups.background, 0.95)
+                    border.color: root.withAlpha(Commons.Color.accent, 0.75)
                     border.width: 2
 
                     MouseArea {
                         anchors.fill: parent
                     }
 
-                    Text {
-                        id: assistTitle
+                    Item {
+                        id: assistHeader
                         anchors.top: parent.top
                         anchors.left: parent.left
                         anchors.right: parent.right
-                        anchors.margins: 14
-                        text: "Choose a window for this space · Tab to skip · Esc to finish"
-                        color: root.withAlpha(Commons.Color.popups.text, 0.75)
-                        font.family: Style.font.menuFamily
-                        font.pixelSize: Style.font.body
-                        elide: Text.ElideRight
-                    }
+                        anchors.margins: 18
+                        height: 30
 
-                    GridView {
-                        id: grid
-                        readonly property int columns: Math.max(1, Math.floor(width / 210))
-                        anchors.top: assistTitle.bottom
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        anchors.margins: 10
-                        anchors.topMargin: 10
-                        clip: true
-                        cellWidth: Math.floor(width / columns)
-                        cellHeight: Math.round(cellWidth * 0.62) + 34
-                        model: root.candidates
-                        boundsBehavior: Flickable.StopAtBounds
+                        Text {
+                            id: assistTitle
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: root.mode === "overview" ? "Janelas abertas" : "Escolha uma janela para este espaço"
+                            color: Commons.Color.popups.text
+                            font.family: Qt.application.font.family
+                            font.pixelSize: Style.font.body + 3
+                            font.weight: Font.DemiBold
+                        }
 
-                        delegate: Item {
-                            id: cell
-                            required property var modelData
-                            width: grid.cellWidth
-                            height: grid.cellHeight
+                        Row {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 14
+                            visible: assistPanel.width > 560
 
-                            Rectangle {
-                                id: tile
-                                anchors.fill: parent
-                                anchors.margins: 6
-                                radius: Style.cornerRadius + 2
-                                color: tileMouse.containsMouse
-                                    ? root.withAlpha(Commons.Color.accent, 0.2)
-                                    : root.withAlpha(Commons.Color.popups.text, 0.05)
-                                border.color: tileMouse.containsMouse ? Commons.Color.accent : root.withAlpha(Commons.Color.popups.text, 0.15)
-                                border.width: tileMouse.containsMouse ? 2 : 1
-
-                                Item {
-                                    id: previewBox
-                                    anchors.top: parent.top
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.bottom: label.top
-                                    anchors.margins: 6
-                                    clip: true
-
-                                    ScreencopyView {
-                                        id: preview
-                                        readonly property var source: root.toplevelFor(cell.modelData.address)
-                                        anchors.centerIn: parent
-                                        readonly property real aspect: cell.modelData.size && cell.modelData.size[1] > 0
-                                            ? cell.modelData.size[0] / cell.modelData.size[1] : 1.6
-                                        width: Math.min(parent.width, parent.height * aspect)
-                                        height: width / aspect
-                                        captureSource: source && source.wayland ? source.wayland : null
-                                        live: false
-                                        paintCursor: false
-                                    }
-
-                                    // Windows with no capture (e.g. minimized) show their icon.
-                                    Image {
-                                        anchors.centerIn: parent
-                                        visible: !preview.hasContent
-                                        width: Math.min(48, parent.height * 0.6)
-                                        height: width
-                                        source: root.iconFor(cell.modelData)
-                                        sourceSize.width: 96
-                                        sourceSize.height: 96
-                                    }
-                                }
+                            Repeater {
+                                model: root.mode === "overview"
+                                    ? [
+                                        { k: "Tab", t: "próxima" },
+                                        { k: "Enter", t: "abrir" },
+                                        { k: "Esc", t: "fechar" }
+                                    ]
+                                    : root.candidates.length > root.assistPageSize
+                                    ? [
+                                        { k: "1–6", t: "escolher" },
+                                        { k: "←  →", t: "página" },
+                                        { k: "Tab", t: "pular" },
+                                        { k: "Esc", t: "concluir" }
+                                    ]
+                                    : [
+                                        { k: "1–6", t: "escolher" },
+                                        { k: "Tab", t: "pular" },
+                                        { k: "Esc", t: "concluir" }
+                                    ]
 
                                 Row {
-                                    id: label
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.bottom: parent.bottom
-                                    anchors.margins: 8
-                                    height: 20
+                                    id: hint
+                                    required property var modelData
                                     spacing: 6
 
-                                    Image {
-                                        width: 18
-                                        height: 18
+                                    Rectangle {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        source: root.iconFor(cell.modelData)
-                                        sourceSize.width: 36
-                                        sourceSize.height: 36
+                                        height: 22
+                                        width: keyLabel.implicitWidth + 14
+                                        radius: 6
+                                        color: root.withAlpha(Commons.Color.popups.text, 0.1)
+                                        border.color: root.withAlpha(Commons.Color.popups.text, 0.18)
+                                        border.width: 1
+
+                                        Text {
+                                            id: keyLabel
+                                            anchors.centerIn: parent
+                                            text: hint.modelData.k
+                                            color: Commons.Color.popups.text
+                                            font.family: Qt.application.font.family
+                                            font.pixelSize: Style.font.body - 1
+                                            font.weight: Font.Medium
+                                        }
                                     }
 
                                     Text {
-                                        width: label.width - 24
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: String(cell.modelData.title || cell.modelData.class || "Window")
-                                        color: Commons.Color.popups.text
-                                        font.family: Style.font.menuFamily
-                                        font.pixelSize: Style.font.body
-                                        elide: Text.ElideRight
+                                        text: hint.modelData.t
+                                        color: root.withAlpha(Commons.Color.popups.text, 0.65)
+                                        font.family: Qt.application.font.family
+                                        font.pixelSize: Style.font.body - 1
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    Item {
+                        id: gridArea
+                        anchors.top: assistHeader.bottom
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.margins: 18
+                        anchors.topMargin: 14
+
+                        readonly property int total: root.candidates.length
+                        readonly property int pages: Math.max(1, Math.ceil(total / root.assistPageSize))
+                        readonly property int page: Math.min(root.assistPage, pages - 1)
+                        readonly property var pageItems: root.candidates.slice(page * root.assistPageSize, (page + 1) * root.assistPageSize)
+                        readonly property real areaW: width
+                        readonly property real areaH: height - (pages > 1 ? 36 : 0)
+                        readonly property int n: pageItems.length
+                        // 1 -> 1 column; 2, 3, 4 -> 2 columns (2 side by side, 2+1, 2x2);
+                        // 5, 6 -> 3 columns. Very wide zones get everything in one row.
+                        readonly property int cols: {
+                            if (n <= 1)
+                                return 1;
+                            if (areaW / Math.max(1, areaH) > 2.2)
+                                return Math.min(n, 4);
+                            return n <= 4 ? 2 : 3;
+                        }
+                        readonly property int rows: Math.max(1, Math.ceil(n / cols))
+                        readonly property real cellW: Math.min(areaW / cols, 380)
+                        readonly property real cellH: Math.min(areaH / rows, 300)
+                        property int hoveredIndex: -1
+
+                        WheelHandler {
+                            onWheel: function(event) {
+                                root.assistGo(event.angleDelta.y < 0 ? 1 : -1);
+                            }
+                        }
+
+                        Repeater {
+                            model: gridArea.pageItems
+
+                            delegate: Item {
+                                id: cell
+                                required property var modelData
+                                required property int index
+                                readonly property int row: Math.floor(index / gridArea.cols)
+                                readonly property int inRow: row === gridArea.rows - 1
+                                    ? gridArea.n - row * gridArea.cols : gridArea.cols
+                                readonly property int globalIndex: root.assistPage * root.assistPageSize + index
+                                // One card is selected at a time in the overview; the mouse
+                                // moves the selection, so keyboard and mouse never disagree.
+                                readonly property bool hovered: root.mode === "overview"
+                                    ? globalIndex === root.overviewIndex : tileMouse.containsMouse
+                                x: (gridArea.areaW - inRow * gridArea.cellW) / 2 + (index % gridArea.cols) * gridArea.cellW
+                                y: (gridArea.areaH - gridArea.rows * gridArea.cellH) / 2 + row * gridArea.cellH
+                                width: gridArea.cellW
+                                height: gridArea.cellH
+                                opacity: gridArea.hoveredIndex < 0 || hovered ? 1 : 0.7
+                                Behavior on opacity { NumberAnimation { duration: 140 } }
+                                onHoveredChanged: {
+                                    if (hovered)
+                                        gridArea.hoveredIndex = index;
+                                    else if (gridArea.hoveredIndex === index)
+                                        gridArea.hoveredIndex = -1;
+                                }
+                                Connections {
+                                    target: tileMouse
+                                    function onContainsMouseChanged() {
+                                        if (tileMouse.containsMouse && root.mode === "overview")
+                                            root.overviewIndex = cell.globalIndex;
+                                    }
+                                }
+
+                                Item {
+                                    id: holder
+                                    anchors.fill: parent
+                                    anchors.margins: 14
+                                    anchors.bottomMargin: 40
+
+                                    Item {
+                                        id: thumb
+                                        readonly property real aspect: cell.modelData.size && cell.modelData.size[1] > 0
+                                            ? cell.modelData.size[0] / cell.modelData.size[1] : 1.6
+                                        width: Math.min(holder.width, holder.height * aspect)
+                                        height: width / aspect
+                                        anchors.centerIn: parent
+                                        anchors.verticalCenterOffset: cell.hovered ? -5 : 0
+                                        scale: cell.hovered ? 1.06 : 1
+                                        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                        Behavior on anchors.verticalCenterOffset { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+                                        // Soft shadow, and an accent glow while hovered.
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            anchors.margins: -3
+                                            anchors.topMargin: 4
+                                            anchors.bottomMargin: -8
+                                            radius: 16
+                                            color: "black"
+                                            opacity: 0.28
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            anchors.margins: -10
+                                            radius: 22
+                                            color: Commons.Color.accent
+                                            opacity: cell.hovered ? 0.4 : 0
+                                            Behavior on opacity { NumberAnimation { duration: 140 } }
+                                        }
+
+                                        // Window picture, clipped to rounded corners.
+                                        Item {
+                                            id: shot
+                                            anchors.fill: parent
+                                            layer.enabled: true
+                                            layer.smooth: true
+                                            layer.effect: MultiEffect {
+                                                maskEnabled: true
+                                                maskSource: shotMask
+                                                maskThresholdMin: 0.3
+                                                maskSpreadAtMin: 0.3
+                                            }
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                color: root.withAlpha(Commons.Color.background, 0.7)
+                                            }
+
+                                            ScreencopyView {
+                                                id: preview
+                                                readonly property var source: root.toplevelFor(cell.modelData.address)
+                                                anchors.fill: parent
+                                                captureSource: source && source.wayland ? source.wayland : null
+                                                live: false
+                                                paintCursor: false
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            id: shotMask
+                                            anchors.fill: parent
+                                            visible: false
+                                            layer.enabled: true
+                                            radius: 12
+                                            color: "black"
+                                        }
+
+                                        // Hover ring, drawn above the picture.
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 12
+                                            color: "transparent"
+                                            border.color: Commons.Color.accent
+                                            border.width: 3
+                                            opacity: cell.hovered ? 1 : 0
+                                            Behavior on opacity { NumberAnimation { duration: 120 } }
+                                        }
+
+                                        // Windows with no capture (e.g. minimized) show a big icon.
+                                        Image {
+                                            anchors.centerIn: parent
+                                            visible: !preview.hasContent
+                                            width: Math.min(64, parent.height * 0.5)
+                                            height: width
+                                            source: root.iconFor(cell.modelData)
+                                            sourceSize.width: 128
+                                            sourceSize.height: 128
+                                        }
+
+                                        // App icon on the bottom edge.
+                                        Image {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            y: parent.height - height * 0.5
+                                            width: 46
+                                            height: 46
+                                            source: root.iconFor(cell.modelData)
+                                            sourceSize.width: 92
+                                            sourceSize.height: 92
+                                        }
+
+                                        // Which workspace the window lives on (overview only).
+                                        Rectangle {
+                                            visible: root.mode === "overview"
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.margins: 8
+                                            height: 20
+                                            width: wsLabel.implicitWidth + 14
+                                            radius: 10
+                                            color: root.withAlpha(Commons.Color.background, 0.78)
+                                            Text {
+                                                id: wsLabel
+                                                anchors.centerIn: parent
+                                                text: String(cell.modelData.workspace && cell.modelData.workspace.name === "special:minimized"
+                                                    ? "Minimizada" : "Área " + (cell.modelData.workspace ? cell.modelData.workspace.id : ""))
+                                                color: Commons.Color.popups.text
+                                                font.family: Qt.application.font.family
+                                                font.pixelSize: Style.font.body - 2
+                                            }
+                                        }
+
+                                        // Shortcut number, per page.
+                                        Rectangle {
+                                            x: 8
+                                            y: 8
+                                            width: 20
+                                            height: 20
+                                            radius: 10
+                                            color: root.withAlpha(Commons.Color.background, 0.78)
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: String(cell.index + 1)
+                                                color: Commons.Color.popups.text
+                                                font.family: Qt.application.font.family
+                                                font.pixelSize: Style.font.body - 2
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Window title, shown on hover.
+                                Text {
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    anchors.bottomMargin: 2
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: String(cell.modelData.title || cell.modelData.class || "Janela")
+                                    color: Commons.Color.popups.text
+                                    font.family: Qt.application.font.family
+                                    font.pixelSize: Style.font.body
+                                    font.weight: Font.Medium
+                                    elide: Text.ElideRight
+                                    opacity: cell.hovered ? 1 : 0
+                                    Behavior on opacity { NumberAnimation { duration: 120 } }
                                 }
 
                                 MouseArea {
@@ -1168,8 +1930,50 @@ Item {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.assistPick(cell.modelData.address)
+                                    onClicked: root.mode === "overview" ? root.focusWindow(cell.modelData.address) : root.assistPick(cell.modelData.address)
                                 }
+                            }
+                        }
+
+                        // Page controls.
+                        Row {
+                            visible: gridArea.pages > 1
+                            anchors.bottom: parent.bottom
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            spacing: 12
+                            height: 26
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "‹"
+                                font.pixelSize: 22
+                                color: root.withAlpha(Commons.Color.popups.text, gridArea.page > 0 ? 0.9 : 0.3)
+                                MouseArea { anchors.fill: parent; anchors.margins: -6; onClicked: root.assistGo(-1) }
+                            }
+
+                            Repeater {
+                                model: gridArea.pages
+
+                                Rectangle {
+                                    required property int index
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: index === gridArea.page ? 20 : 8
+                                    height: 8
+                                    radius: 4
+                                    color: index === gridArea.page
+                                        ? Commons.Color.accent
+                                        : root.withAlpha(Commons.Color.popups.text, 0.35)
+                                    Behavior on width { NumberAnimation { duration: 120 } }
+                                    MouseArea { anchors.fill: parent; anchors.margins: -5; onClicked: root.assistPage = parent.index }
+                                }
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "›"
+                                font.pixelSize: 22
+                                color: root.withAlpha(Commons.Color.popups.text, gridArea.page < gridArea.pages - 1 ? 0.9 : 0.3)
+                                MouseArea { anchors.fill: parent; anchors.margins: -6; onClicked: root.assistGo(1) }
                             }
                         }
                     }
