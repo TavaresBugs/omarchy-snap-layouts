@@ -18,8 +18,21 @@ Item {
     property real aspect: 16 / 9
     property int thumbHeight: 76
     property var toplevelFor: function(address) { return null; }
+    // A window is being dragged over this workspace (or -1): it lights up as a drop target.
+    property int dropId: -1
 
     signal chosen(var entry)
+
+    // The workspace under a point given in this strip's coordinates, or -1.
+    function idAt(px, py) {
+        for (var i = 0; i < repeater.count; i++) {
+            var thumb = repeater.itemAt(i);
+            var p = thumb.mapFromItem(strip, px, py);
+            if (p.x >= 0 && p.y >= 0 && p.x <= thumb.width && p.y <= thumb.height)
+                return thumb.modelData.id;
+        }
+        return -1;
+    }
 
     implicitWidth: row.implicitWidth
     implicitHeight: thumbHeight
@@ -30,6 +43,7 @@ Item {
         spacing: 12
 
         Repeater {
+            id: repeater
             model: strip.entries
 
             Rectangle {
@@ -37,16 +51,17 @@ Item {
                 required property var modelData
                 readonly property bool selected: modelData.id === strip.selectedId
                 readonly property bool empty: modelData.count === 0
+                readonly property bool target: modelData.id === strip.dropId
                 readonly property int inset: 3
 
                 width: Math.round(strip.thumbHeight * strip.aspect)
                 height: strip.thumbHeight
                 radius: 8
                 color: Util.withAlpha(Commons.Color.popups.background, 0.82)
-                border.color: Util.withAlpha(Commons.Color.popups.text, selected ? 0.9 : 0.16)
-                border.width: selected ? 2 : 1
-                scale: selected || mouse.containsMouse ? 1.05 : 1
-                opacity: selected || mouse.containsMouse ? 1 : (empty ? 0.55 : 0.88)
+                border.color: Util.withAlpha(Commons.Color.popups.text, target ? 1 : (selected ? 0.9 : 0.16))
+                border.width: selected || target ? 2 : 1
+                scale: selected || target || mouse.containsMouse ? 1.05 : 1
+                opacity: selected || target || mouse.containsMouse ? 1 : (empty ? 0.55 : 0.88)
                 Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                 Behavior on opacity { NumberAnimation { duration: 120 } }
                 Behavior on border.color { ColorAnimation { duration: 120 } }

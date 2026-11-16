@@ -11,6 +11,7 @@ import "components"
 import "lib/layouts.js" as Layouts
 import "lib/edge.js" as Edge
 import "lib/monitors.js" as Monitors
+import "lib/dispatch.js" as Dispatch
 import "lib/windows.js" as Windows
 import "lib/overview.js" as Overview
 import "lib/settings.js" as Settings
@@ -108,6 +109,7 @@ Item {
     // The workspace whose windows the overview shows, and the strip of all of them.
     property int overviewWorkspace: 0
     property var workspaceStrip: []
+    property var otherScreens: []
     // 0 = every window sits where it really is, 1 = settled in the overview.
     property real overviewT: 1
     NumberAnimation {
@@ -168,7 +170,9 @@ Item {
             return Windows.belongsToWorkspace(c, root.overviewWorkspace);
         });
         var list = Windows.sortForOverview(scoped);
-        root.workspaceStrip = showAll ? [] : Workspaces.buildStrip(offered, Monitors.indexById(root.monitorsIpc), root.overviewWorkspace);
+        var byId = Monitors.indexById(root.monitorsIpc);
+        root.workspaceStrip = showAll ? [] : Workspaces.buildStrip(offered, byId, root.overviewWorkspace);
+        root.otherScreens = showAll ? [] : Workspaces.otherStrips(offered, byId, root.overviewWorkspace);
         root.candidates = list;
         root.overviewIndex = first ? Windows.previousWindowIndex(list) : 0;
         var top = m.reserved[1] + (root.workspaceStrip.length > 0 ? 138 : 50);
@@ -191,6 +195,23 @@ Item {
     // A click on a strip thumbnail: look at that workspace's windows.
     function chooseWorkspaceEntry(entry) {
         root.switchOverviewWorkspace(entry.id);
+    }
+
+    // A card dropped on a workspace: send the window there, stay in the overview
+    // and show the result once Hyprland has moved it.
+    function moveWindowToWorkspace(address, workspaceId) {
+        var owner = Workspaces.monitorFor(workspaceId, Monitors.indexById(root.monitorsIpc));
+        var lua = Dispatch.moveToWorkspace(address, workspaceId, owner ? owner.name : "");
+        if (lua === "")
+            return;
+        Quickshell.execDetached(["hyprctl", "eval", lua]);
+        refreshTimer.restart();
+    }
+
+    Timer {
+        id: refreshTimer
+        interval: 250
+        onTriggered: root.requestSnapshot("overview-refresh")
     }
 
 
@@ -352,6 +373,8 @@ Item {
 
     property var iconCache: ({})
     function iconFor(client) {
+        if (!client)
+            return "";
         var cls = String(client.class || client.initialClass || "").toLowerCase();
         if (Object.prototype.hasOwnProperty.call(root.iconCache, cls))
             return root.iconCache[cls];
@@ -375,7 +398,7 @@ Item {
         var offered = root.clients.filter(function(c) {
             return Windows.isSnappable(c) && root.placedAddresses.indexOf(c.address) === -1;
         });
-        root.candidates = Windows.sortForAssist(offered, root.monitor ? root.monitor.workspaceId : -1);
+        root.candidates = Windows.forAssist(offered, root.monitor ? root.monitor.workspaceId : -1);
     }
 
     function placeWindow(address, layoutIndex, zoneIndex) {
@@ -536,6 +559,8 @@ Item {
                     root.startPicker();
                 else if (root.snapshotReason === "overview")
                     root.startOverview();
+                else if (root.snapshotReason === "overview-refresh" && root.mode === "overview")
+                    root.refreshOverview(false);
                 else if (root.snapshotReason === "press" && root.buttonDown) {
                     root.dragStart = Windows.positionsOf(root.clients);
                     dragPoll.start();
@@ -1159,12 +1184,14 @@ Item {
                     toplevelFor: root.toplevelFor
                     iconFor: root.iconFor
                     workspaces: root.workspaceStrip
+                    otherScreens: root.otherScreens
                     workspaceId: root.overviewWorkspace
                     monitorAspect: root.monitor ? root.monitor.w / root.monitor.h : 16 / 9
                     emptyText: qsTr("Nenhuma janela neste workspace")
                     onSelect: function(index) { root.overviewIndex = index; }
                     onActivated: function(address) { root.focusWindow(address); }
                     onWorkspaceChosen: function(entry) { root.chooseWorkspaceEntry(entry); }
+                    onMoveRequested: function(address, workspaceId) { root.moveWindowToWorkspace(address, workspaceId); }
                 }
 
                 LayoutPicker {

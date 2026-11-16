@@ -66,14 +66,13 @@ Rectangle {
         OverviewCard {
             required property int index
             rect: panel.rects[index] ?? null
-            client: panel.clients[index]
-            toplevel: panel.toplevelFor(client.address)
-            iconSource: panel.iconFor(client)
-            badge: String(index + 1)
+            client: panel.clients[index] ?? null
+            toplevel: client ? panel.toplevelFor(client.address) : null
+            iconSource: client ? panel.iconFor(client) : ""
             progress: 1
             selected: index === panel.hoveredIndex
             onHovered: panel.hoveredIndex = index
-            onActivated: panel.picked(client.address)
+            onActivated: { if (client) panel.picked(client.address); }
         }
     }
 

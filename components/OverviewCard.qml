@@ -20,10 +20,15 @@ Item {
     property var toplevel: null         // its Hyprland toplevel, for the live picture
     property string iconSource: ""
     property bool selected: false
-    property string badge: ""           // a small shortcut number in the corner, if set
+    // While this card is being dragged to a workspace it stays behind, faded.
+    property bool dragged: false
 
     signal hovered()
     signal activated()
+    // Drag and drop: scene coordinates of the pointer.
+    signal dragStarted(real sx, real sy)
+    signal dragMoved(real sx, real sy)
+    signal dropped(real sx, real sy)
 
     readonly property int cornerRadius: 10
 
@@ -32,7 +37,7 @@ Item {
     width: rect ? rect.rw + (rect.w - rect.rw) * progress : 0
     height: rect ? rect.rh + (rect.h - rect.rh) * progress : 0
     z: selected ? 10 : 0
-    opacity: selected ? 1 : 0.9
+    opacity: dragged ? 0.35 : (selected ? 1 : 0.9)
     scale: selected ? 1.05 : 1
     Behavior on opacity { NumberAnimation { duration: 140 } }
     Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
@@ -83,25 +88,6 @@ Item {
         sourceSize.height: 80
     }
 
-    // Shortcut number.
-    Rectangle {
-        visible: card.badge !== ""
-        x: 8
-        y: 8
-        width: 22
-        height: 22
-        radius: 11
-        color: Util.withAlpha(Commons.Color.background, 0.8)
-        Text {
-            anchors.centerIn: parent
-            text: card.badge
-            color: Commons.Color.popups.text
-            font.family: Qt.application.font.family
-            font.pixelSize: Style.font.body - 2
-            font.weight: Font.DemiBold
-        }
-    }
-
     // Title, only for the selected window.
     Text {
         anchors.horizontalCenter: parent.horizontalCenter
@@ -118,10 +104,45 @@ Item {
     }
 
     MouseArea {
+        id: mouse
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: card.dragged ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+
+        // A press that travels further than this is a drag, not a click.
+        readonly property int threshold: 8
+        property point pressPoint
+        property bool moved: false
+
+        function scene(m) {
+            return mouse.mapToItem(null, m.x, m.y);
+        }
+
         onEntered: card.hovered()
-        onClicked: card.activated()
+        onPressed: function(m) {
+            pressPoint = scene(m);
+            moved = false;
+        }
+        onPositionChanged: function(m) {
+            if (!pressed)
+                return;
+            var p = scene(m);
+            if (!moved && Math.hypot(p.x - pressPoint.x, p.y - pressPoint.y) > threshold) {
+                moved = true;
+                card.dragStarted(p.x, p.y);
+            }
+            if (moved)
+                card.dragMoved(p.x, p.y);
+        }
+        onReleased: function(m) {
+            if (moved) {
+                var p = scene(m);
+                card.dropped(p.x, p.y);
+            }
+        }
+        onClicked: {
+            if (!moved)
+                card.activated();
+        }
     }
 }

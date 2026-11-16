@@ -8,7 +8,7 @@ SnapLayouts.qml      state machine, Hyprland I/O, settings, IPC
 components/          views              lib/        decisions (pure JS)
 ```
 
-**`lib/`** holds every decision that can be made from plain data: where a zone lands, which zone the pointer is asking for, how windows are ordered, how thumbnails are laid out, which arrow key goes where, what the options mean. The files are QML JavaScript libraries (`.pragma library`) and use no Qt objects, so `test/load.js` can load them in node and `npm test` covers them.
+**`lib/`** holds every decision (and the Lua it sends to Hyprland) that can be made from plain data: where a zone lands, which zone the pointer is asking for, how windows are ordered, how thumbnails are laid out, which arrow key goes where, what the options mean. The files are QML JavaScript libraries (`.pragma library`) and use no Qt objects, so `test/load.js` can load them in node and `npm test` covers them.
 
 **`components/`** only draw. Each takes data as properties and reports what the user did as signals. They never read Hyprland or the plugin's state, so they can be reused or restyled on their own. `WindowPicture` (rounded capture with an icon fallback) is shared by the overview and snap assist.
 
@@ -41,7 +41,11 @@ components/          views              lib/        decisions (pure JS)
 
 ## Workspaces
 
-Omarchy gives each monitor a block of ten workspaces (monitor 1: 1-10, monitor 2: 11-20) and the bar labels them by position. `lib/workspaces.js` applies the same rule: `buildStrip` returns the first five of the current monitor's block (plus later ones that hold windows), each with its windows as fractions of their monitor, and `stepWorkspace` moves between them. `refreshOverview` re-lays-out the windows of whichever workspace the strip has selected.
+Omarchy gives each monitor a block of ten workspaces (monitor 1: 1-10, monitor 2: 11-20) and the bar labels them by position. `lib/workspaces.js` applies the same rule: `buildStrip` returns the first five of the current monitor's block (plus later ones that hold windows), each with its windows as fractions of their monitor, and `stepWorkspace` moves between them. `refreshOverview` re-lays-out the windows of whichever workspace the strip has selected. `otherStrips` builds a smaller strip for each other monitor.
+
+## Moving a window between workspaces
+
+`OverviewCard` reports a drag (past a small threshold) as scene coordinates; `OverviewLayer` shows a ghost of the window, asks each `WorkspaceStrip` which workspace is under the pointer (`idAt`) and, on release, emits `moveRequested`. `SnapLayouts` builds the Lua with `lib/dispatch.js` and sends it through `hyprctl eval`, then re-reads the state and re-lays-out. A workspace that does not exist yet would be created on the window's own monitor, so for an empty slot of another screen `moveToWorkspace` shows the workspace on its owner for a moment and then restores that monitor's view and the focused window.
 
 ## Layers and notifications
 

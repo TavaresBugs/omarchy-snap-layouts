@@ -101,3 +101,28 @@ test("stepping from a workspace not in the strip lands on the first; empty strip
     assert.equal(W.stepWorkspace(strip, 99, 1), 11);
     assert.equal(W.stepWorkspace([], 7, 1), 7);
 });
+
+// Both monitors with a workspace showing: laptop panel on 1, the other on 11.
+const showing = {
+    0: { id: 0, name: "eDP-1", workspaceId: 1, x: 1536, y: 0, w: 1280, h: 720 },
+    1: { id: 1, name: "DP-3", workspaceId: 11, x: 0, y: 0, w: 1536, h: 864 }
+};
+
+test("the monitor owning a workspace is the one showing its block", () => {
+    assert.equal(W.monitorFor(13, showing).name, "DP-3");
+    assert.equal(W.monitorFor(4, showing).name, "eDP-1");
+    assert.equal(W.monitorFor(25, showing), null);
+});
+
+test("other strips cover every monitor except the one being looked at", () => {
+    const others = W.otherStrips([win(1, 0, [1540, 30], [640, 360], { address: "s" })], showing, 11);
+    assert.equal(others.length, 1);
+    assert.equal(others[0].name, "eDP-1");
+    assert.deepEqual(others[0].entries.map((e) => e.id), [1, 2, 3, 4, 5]);
+    assert.equal(others[0].entries[0].count, 1);
+    assert.equal(W.otherStrips([], showing, 3)[0].name, "DP-3");
+});
+
+test("a single monitor has no other strips", () => {
+    assert.deepEqual(W.otherStrips([], { 1: showing[1] }, 11), []);
+});

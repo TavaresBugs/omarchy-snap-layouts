@@ -16,7 +16,7 @@ The screenshots show the plugin running in Omarchy's real shell.
 
 - **Drag to snap:** drag a floating window to the top of a screen and the picker appears. A preview shows where the window will land.
 - **Six layouts:** two halves, two-thirds and one-third (either way round), three columns, one half and two quarters, and four quarters.
-- **Snap assist:** after the first window lands, pick windows for the remaining spaces from live thumbnails. Minimized windows and windows on other workspaces are offered too.
+- **Snap assist:** after the first window lands, pick windows for the remaining spaces from live thumbnails. Only the windows of the workspace being filled are offered (plus the ones minimized from it); windows on other workspaces or screens are not.
 - **Keyboard shortcut:** open the picker for the focused window, including tiled windows, which become floating when snapped.
 - **Edge and corner snap:** drag a window against the left or right edge for a half, a corner for a quarter, or the top edge for the whole usable area. Hold for a moment and a preview appears; let go to snap, move away to cancel.
 - **Window overview (Alt+Tab):** every window of the current workspace as a thumbnail, laid out in tidy rows, with arrow-key and mouse selection. Choosing a window brings it to the front.
@@ -95,6 +95,8 @@ o.bind("ALT + TAB", "Window overview", hl.dsp.event("io.github.n0rthstar88.snap-
 It shows the windows of the current workspace, plus the ones minimized from it; set `overviewScope` to `"all"` to list every workspace.
 
 **Workspace strip.** At the top, one thumbnail per workspace of the monitor you are on, following Omarchy's per-monitor blocks of ten (the first five always, the others when they hold windows or are current), labelled like the bar. Each thumbnail shows its windows live, at their real positions; empty workspaces are dimmed. Click one, or press Ctrl+Left/Right or PageUp/PageDown, to look at that workspace's windows. Thumbnails are arranged in rows of equal height: one window, two side by side, three as 2+1, four as 2+2, and so on.
+
+**Moving windows.** Drag a thumbnail onto any workspace in the strip to send the window there without leaving the overview. With more than one monitor, a smaller strip for every other screen sits beside the main one, so a window can be dropped onto a workspace of another screen (the workspace is created on that screen if it is empty). Clicking a thumbnail in either strip shows that workspace's windows.
 
 A tiled window can never be drawn above floating ones in Hyprland. When you pick a tiled window that floating windows cover, those floating windows join the tiling layout, so everything stays visible and resizable. Pinned and fullscreen windows are left alone.
 

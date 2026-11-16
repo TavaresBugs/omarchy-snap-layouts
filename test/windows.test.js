@@ -19,13 +19,28 @@ test("isSnappable: normal workspaces and the minimized one only", () => {
     assert.equal(W.isSnappable(null), false);
 });
 
-test("assist order: current workspace first, then most recent", () => {
+test("assist offers only the windows of the workspace being filled, most recent first", () => {
     const list = [
-        win({ address: "a", workspace: { id: 1 }, focusHistoryID: 1 }),
+        win({ address: "a", workspace: { id: 12 }, focusHistoryID: 1 }),
         win({ address: "b", workspace: { id: 11 }, focusHistoryID: 3 }),
-        win({ address: "c", workspace: { id: 11 }, focusHistoryID: 2 })
+        win({ address: "c", workspace: { id: 11 }, focusHistoryID: 2 }),
+        win({ address: "d", workspace: { id: 1 }, focusHistoryID: 0 })
     ];
-    assert.deepEqual(W.sortForAssist(list, 11).map((w) => w.address), ["c", "b", "a"]);
+    assert.deepEqual(W.forAssist(list, 11).map((w) => w.address), ["c", "b"]);
+});
+
+test("assist also offers windows minimized from this workspace, not from another", () => {
+    const min = (address, from) => win({
+        address, workspace: { id: -98, name: "special:minimized" }, tags: ["omarchy-minimized-from-" + from]
+    });
+    const out = W.forAssist([min("mine", 11), min("theirs", 12)], 11).map((w) => w.address);
+    assert.deepEqual(out, ["mine"]);
+});
+
+test("assist does not modify the original list", () => {
+    const list = [win({ address: "x", workspace: { id: 1 }, focusHistoryID: 2 }), win({ address: "y", workspace: { id: 1 }, focusHistoryID: 1 })];
+    W.forAssist(list, 1);
+    assert.equal(list[0].address, "x");
 });
 
 test("overview order: by workspace, minimized last, then most recent", () => {
