@@ -20,6 +20,7 @@ Item {
     property var toplevel: null         // its Hyprland toplevel, for the live picture
     property string iconSource: ""
     property bool selected: false
+    property string badge: ""           // a small shortcut number in the corner, if set
 
     signal hovered()
     signal activated()
@@ -80,6 +81,25 @@ Item {
         source: card.iconSource
         sourceSize.width: 80
         sourceSize.height: 80
+    }
+
+    // Shortcut number.
+    Rectangle {
+        visible: card.badge !== ""
+        x: 8
+        y: 8
+        width: 22
+        height: 22
+        radius: 11
+        color: Util.withAlpha(Commons.Color.background, 0.8)
+        Text {
+            anchors.centerIn: parent
+            text: card.badge
+            color: Commons.Color.popups.text
+            font.family: Qt.application.font.family
+            font.pixelSize: Style.font.body - 2
+            font.weight: Font.DemiBold
+        }
     }
 
     // Title, only for the selected window.

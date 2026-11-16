@@ -171,7 +171,7 @@ Item {
         root.workspaceStrip = showAll ? [] : Workspaces.buildStrip(offered, Monitors.indexById(root.monitorsIpc), root.overviewWorkspace);
         root.candidates = list;
         root.overviewIndex = first ? Windows.previousWindowIndex(list) : 0;
-        var top = m.reserved[1] + (root.workspaceStrip.length > 0 ? 104 : 50);
+        var top = m.reserved[1] + (root.workspaceStrip.length > 0 ? 138 : 50);
         root.overviewRects = root.overviewLayout(list, { x: 70, y: top, w: m.w - 140, h: m.h - top - 70 });
         root.overviewT = 0;
         overviewAnim.restart();
@@ -188,15 +188,9 @@ Item {
         root.switchOverviewWorkspace(Workspaces.stepWorkspace(root.workspaceStrip, root.overviewWorkspace, delta));
     }
 
-    // A click on a strip thumbnail: look at that workspace, or, for the empty
-    // slot, go there.
+    // A click on a strip thumbnail: look at that workspace's windows.
     function chooseWorkspaceEntry(entry) {
-        if (!entry.isNew) {
-            root.switchOverviewWorkspace(entry.id);
-            return;
-        }
-        Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.focus({ workspace = '" + entry.id + "' })"]);
-        root.close();
+        root.switchOverviewWorkspace(entry.id);
     }
 
 
@@ -283,6 +277,40 @@ Item {
             if (root.assistZones.indexOf(j) === -1)
                 out.push(root.localRect(root.zoneScreenRect(root.assistLayout, j)));
         return out;
+    }
+
+    // ---- Snap assist: the window offers, paged, and their layout in the panel ----
+
+    function assistZoneRect() {
+        if (root.mode !== "assist" || root.assistZone < 0 || !root.monitor)
+            return null;
+        return root.localRect(root.zoneScreenRect(root.assistLayout, root.assistZone));
+    }
+
+    function assistPageCount() {
+        return Math.max(1, Math.ceil(root.candidates.length / root.assistPageSize));
+    }
+
+    function assistPageIndex() {
+        return Math.min(root.assistPage, root.assistPageCount() - 1);
+    }
+
+    function assistPageItems() {
+        var start = root.assistPageIndex() * root.assistPageSize;
+        return root.candidates.slice(start, start + root.assistPageSize);
+    }
+
+    // The thumbnails use the same row layout as the overview, inside the panel.
+    function assistCardRects() {
+        var zone = root.assistZoneRect();
+        if (!zone)
+            return [];
+        var windows = root.assistPageItems().map(function(c) {
+            return { at: c.at, size: c.size, monitor: root.monitorById(c.monitor) || root.monitor };
+        });
+        var bottom = root.assistPageCount() > 1 ? 56 : 28;
+        var area = { x: 24, y: 70, w: zone.w - 48, h: zone.h - 70 - bottom };
+        return Overview.layoutRows(windows, area, { gapX: 28, gapY: 56, maxHeightFraction: 0.7 });
     }
 
     function thumbRects() {
@@ -1173,11 +1201,11 @@ Item {
                 }
 
                 AssistPanel {
-                    zone: root.mode === "assist" && root.assistZone >= 0
-                        ? root.localRect(root.zoneScreenRect(root.assistLayout, root.assistZone)) : null
-                    clients: root.candidates
-                    page: root.assistPage
-                    pageSize: root.assistPageSize
+                    zone: root.assistZoneRect()
+                    clients: root.assistPageItems()
+                    rects: root.assistCardRects()
+                    page: root.assistPageIndex()
+                    pages: root.assistPageCount()
                     toplevelFor: root.toplevelFor
                     iconFor: root.iconFor
                     onPicked: function(address) { root.assistPick(address); }

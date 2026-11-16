@@ -4,18 +4,20 @@ import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
 import "Util.js" as Util
 
-// A row of small workspace thumbnails, each drawn as the outlines of its
-// windows, with an empty slot at the end for a new workspace. The selected one
-// gets a thin neutral ring. Presentation only: it reports clicks as a signal.
+// A row of workspace thumbnails. Each one shows what the workspace really holds:
+// its windows, drawn small at their real positions with their live picture.
+// Empty workspaces are dimmed. The selected one gets a thin neutral ring.
+// Presentation only: it reports clicks as a signal.
 //
-//   entries: from Workspaces.buildStrip -> [{ id, isNew, windows: [{x, y, w, h}], count }]
+//   entries: from Workspaces.buildStrip -> [{ id, label, windows: [{x, y, w, h, address}], count }]
 Item {
     id: strip
 
     property var entries: []
     property int selectedId: 0
     property real aspect: 16 / 9
-    readonly property int thumbHeight: 46
+    property int thumbHeight: 76
+    property var toplevelFor: function(address) { return null; }
 
     signal chosen(var entry)
 
@@ -33,57 +35,58 @@ Item {
             Rectangle {
                 id: thumb
                 required property var modelData
-                readonly property bool selected: !modelData.isNew && modelData.id === strip.selectedId
+                readonly property bool selected: modelData.id === strip.selectedId
+                readonly property bool empty: modelData.count === 0
+                readonly property int inset: 3
 
                 width: Math.round(strip.thumbHeight * strip.aspect)
                 height: strip.thumbHeight
                 radius: 8
-                color: Util.withAlpha(Commons.Color.popups.background, modelData.isNew ? 0.35 : 0.8)
+                color: Util.withAlpha(Commons.Color.popups.background, 0.82)
                 border.color: Util.withAlpha(Commons.Color.popups.text, selected ? 0.9 : 0.16)
                 border.width: selected ? 2 : 1
                 scale: selected || mouse.containsMouse ? 1.05 : 1
-                opacity: selected || mouse.containsMouse ? 1 : 0.85
+                opacity: selected || mouse.containsMouse ? 1 : (empty ? 0.55 : 0.88)
                 Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                 Behavior on opacity { NumberAnimation { duration: 120 } }
                 Behavior on border.color { ColorAnimation { duration: 120 } }
 
-                // The workspace's windows, as outlines.
+                // The windows, at their real positions, with their live picture.
                 Repeater {
                     model: thumb.modelData.windows
 
-                    Rectangle {
+                    WindowPicture {
                         required property var modelData
-                        x: 4 + modelData.x * (thumb.width - 8)
-                        y: 4 + modelData.y * (thumb.height - 8)
-                        width: Math.max(3, modelData.w * (thumb.width - 8))
-                        height: Math.max(3, modelData.h * (thumb.height - 8))
-                        radius: 2
-                        color: Util.withAlpha(Commons.Color.popups.text, 0.28)
-                        border.color: Util.withAlpha(Commons.Color.popups.text, 0.45)
-                        border.width: 1
+                        x: thumb.inset + modelData.x * (thumb.width - 2 * thumb.inset)
+                        y: thumb.inset + modelData.y * (thumb.height - 2 * thumb.inset)
+                        width: Math.max(4, modelData.w * (thumb.width - 2 * thumb.inset))
+                        height: Math.max(4, modelData.h * (thumb.height - 2 * thumb.inset))
+                        toplevel: strip.toplevelFor(modelData.address)
+                        cornerRadius: 3
+                        backdrop: Util.withAlpha(Commons.Color.background, 0.8)
+                        fallbackIconSize: 0
                     }
                 }
 
-                // Empty slot: a plus.
-                Text {
-                    visible: thumb.modelData.isNew
-                    anchors.centerIn: parent
-                    text: "+"
-                    color: Util.withAlpha(Commons.Color.popups.text, 0.6)
-                    font.pixelSize: 22
-                }
-
-                // Workspace number.
-                Text {
-                    visible: !thumb.modelData.isNew
+                // Workspace label, as in the bar.
+                Rectangle {
                     anchors.left: parent.left
                     anchors.bottom: parent.bottom
                     anchors.margins: 4
-                    text: String(thumb.modelData.id)
-                    color: Util.withAlpha(Commons.Color.popups.text, 0.7)
-                    font.family: Qt.application.font.family
-                    font.pixelSize: Style.font.body - 3
-                    font.weight: Font.DemiBold
+                    width: label.implicitWidth + 10
+                    height: 16
+                    radius: 8
+                    color: Util.withAlpha(Commons.Color.background, 0.78)
+
+                    Text {
+                        id: label
+                        anchors.centerIn: parent
+                        text: thumb.modelData.label
+                        color: Commons.Color.popups.text
+                        font.family: Qt.application.font.family
+                        font.pixelSize: Style.font.body - 3
+                        font.weight: Font.DemiBold
+                    }
                 }
 
                 MouseArea {

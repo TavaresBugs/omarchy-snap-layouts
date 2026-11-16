@@ -88,10 +88,13 @@ o.bind("ALT + TAB", "Window overview", hl.dsp.event("io.github.n0rthstar88.snap-
 | Arrow keys | Select the nearest window in that direction |
 | Tab / Shift+Tab | Next / previous window |
 | Enter or click | Bring the window to the front |
+| Ctrl+Left / Ctrl+Right, PageUp / PageDown | Look at the previous / next workspace |
 | 1 to 6 | Pick a window by number |
 | Esc or click outside | Close |
 
-It shows the windows of the current workspace, plus the ones minimized from it; set `overviewScope` to `"all"` to list every workspace. Thumbnails are arranged in rows of equal height: one window, two side by side, three as 2+1, four as 2+2, and so on.
+It shows the windows of the current workspace, plus the ones minimized from it; set `overviewScope` to `"all"` to list every workspace.
+
+**Workspace strip.** At the top, one thumbnail per workspace of the monitor you are on, following Omarchy's per-monitor blocks of ten (the first five always, the others when they hold windows or are current), labelled like the bar. Each thumbnail shows its windows live, at their real positions; empty workspaces are dimmed. Click one, or press Ctrl+Left/Right or PageUp/PageDown, to look at that workspace's windows. Thumbnails are arranged in rows of equal height: one window, two side by side, three as 2+1, four as 2+2, and so on.
 
 A tiled window can never be drawn above floating ones in Hyprland. When you pick a tiled window that floating windows cover, those floating windows join the tiling layout, so everything stays visible and resizable. Pinned and fullscreen windows are left alone.
 
@@ -155,8 +158,8 @@ npm test        # unit tests for everything in lib/
 
 | Folder | Contents |
 |---|---|
-| `lib/` | Pure logic as QML JavaScript libraries: zone geometry, edge targets, monitors, window ordering, overview layout and navigation, options. No Qt objects, tested with node |
-| `components/` | QML views driven by properties and signals: layout picker, snap assist, overview, shared window picture |
+| `lib/` | Pure logic as QML JavaScript libraries: zone geometry, edge targets, monitors, workspace strip, window ordering, overview layout and navigation, options. No Qt objects, tested with node |
+| `components/` | QML views driven by properties and signals: layout picker, snap assist, overview, workspace strip, shared window picture |
 | `SnapLayouts.qml` | State machine and Hyprland I/O |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Optional Hyprland config that goes with this plugin (a window limiter and key bindings) is in [extras/hyprland](extras/hyprland/README.md).

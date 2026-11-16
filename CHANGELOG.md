@@ -5,9 +5,10 @@
 Added
 - Edge and corner snap: drag against the left or right edge for a half, a corner for a quarter, or the top edge for the whole usable area, with a preview and a short hold.
 - Window overview (Alt+Tab style): thumbnails of the current workspace's windows in tidy rows, geometric arrow-key navigation, Enter or click to bring a window forward. A tiled window covered by floating windows is brought forward by tiling those floating windows.
+- Workspace strip in the overview: the monitor's workspaces (Omarchy's per-monitor blocks), each showing its windows live, with Ctrl+Left/Right and PageUp/PageDown to switch the view.
 - Options in `shell.json`: `edgeSnap`, `edgeDwellMs`, `edgeMargin`, `edgeCorner`, `overviewScope`.
 - IPC: `overview` and `focus <address>`.
-- Paged snap assist with number and arrow-key shortcuts, rounded thumbnails and hover feedback.
+- Snap assist now uses the same thumbnails and row layout as the overview, in a quiet neutral frame, with number shortcuts and paging.
 - Optional Hyprland extras: key bindings and a floating-window limiter.
 
 Fixed

@@ -76,6 +76,7 @@ Item {
         entries: layer.workspaces
         selectedId: layer.workspaceId
         aspect: layer.monitorAspect
+        toplevelFor: layer.toplevelFor
         opacity: layer.progress
         z: 20
         onChosen: function(entry) { layer.workspaceChosen(entry); }
