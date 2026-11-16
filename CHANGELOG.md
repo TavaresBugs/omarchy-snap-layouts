@@ -18,7 +18,11 @@ Added
 - The overview closes by running the windows back to their places; the wallpaper is decoded before the first frame, so it no longer pops in during the opening.
 - Key handling for the overview moved to `lib/navigation.js` and is tested.
 
-- The overview is modal: the system's shortcuts are paused while it is open (a Hyprland submap, `overview-mode.lua`), so Super+Shift+arrow can no longer swap, or carry to another monitor, the window behind it. Alt+Tab, Super+1..0, Super+Shift+arrow and Escape stay live. Super+Shift+arrow now swaps the selected window with its neighbour, or a workspace with its neighbour on the strip.
+- The overview is modal: the system's shortcuts are paused while it is open (a Hyprland submap, `overview-mode.lua`), so Super+Shift+arrow can no longer swap, or carry to another monitor, the window behind it. Alt+Tab, Super+1..0, Super+Shift+arrow and Escape stay live, and so do screenshots and screen capture, notification keys and the volume, brightness and media keys; more can be added with `snap_layouts_overview_keep`. Super+Shift+arrow now swaps the selected window with its neighbour, or a workspace with its neighbour on the strip.
+
+- Thumbnails take their colours from the theme, as Omarchy's image picker does: the accent ring marks what is selected; the workspace being looked at gets a softer accent ring while the windows have the focus and the strong one when the strip has it; everything else has a faint rim.
+- One soft shadow (`RectangularShadow`) sized from the frame's height, so small thumbnails and large cards get the same look; the drag ghost uses the same frame.
+- Smoother transition: a long-tailed opening curve and a symmetrical closing one, cards leaving their windows one after another with the selected one first, the workspace strip dropping in, the icon and title appearing only once a card has arrived, and a quick but eased dim.
 
 Fixed
 - The overview backdrop is one piece: the wallpaper is laid out over the whole screen exactly as the desktop draws it (so it lines up across the bar), the part below the bar is painted, and a single dim covers everything, bar included. It reaches the screen edges, so the focused window's border can't show around it, and it has no corners of its own to show.

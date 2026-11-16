@@ -68,5 +68,5 @@ test("trading places needs two different valid addresses", () => {
 });
 
 test("leaving the overview's submap only acts when it is the active one", () => {
-    assert.match(D.LEAVE_OVERVIEW_MODE, /get_current_submap\(\) == 'snap_layouts_overview'/);
+    assert.match(D.LEAVE_OVERVIEW_MODE, /get_current_submap\(\):find\('\^snap_layouts_overview'\)/);
 });

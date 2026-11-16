@@ -140,8 +140,10 @@ Item {
         property: "overviewT"
         from: 0
         to: 1
-        duration: 300
-        easing.type: Easing.OutCubic
+        duration: 360
+        // Fast out of the blocks, long soft landing.
+        easing.type: Easing.BezierSpline
+        easing.bezierCurve: [0.16, 1, 0.3, 1, 1, 1]
     }
     // Closing runs the opening backwards: the windows travel back to their
     // places, and only then does the overview go away.
@@ -150,8 +152,9 @@ Item {
         target: root
         property: "overviewT"
         to: 0
-        duration: 220
-        easing.type: Easing.InOutCubic
+        duration: 260
+        easing.type: Easing.BezierSpline
+        easing.bezierCurve: [0.65, 0, 0.35, 1, 1, 1]
         onFinished: root.hide()
     }
 
@@ -1428,7 +1431,7 @@ Item {
                     rects: root.overviewRects
                     clients: root.candidates
                     selectedIndex: root.stripFocus ? -1 : root.overviewIndex
-                    stripFocused: root.stripFocus
+                    stripFocused: root.stripFocus || root.candidates.length === 0
                     morph: root.overviewMorph
                     progress: root.overviewT
                     topInset: root.monitor ? root.monitor.reserved[1] : 0

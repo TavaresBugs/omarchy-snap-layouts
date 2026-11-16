@@ -44,6 +44,13 @@ Item {
     // function(workspaceId, address) -> { windows, slot }.
     property var previewFor: function(workspaceId, address) { return null; }
 
+    // The dim is quick (the real windows must be hidden while the cards still sit on
+    // them) and eased, so it neither jumps nor lingers.
+    readonly property real dimProgress: {
+        var t = Math.min(1, layer.progress * 1.8);
+        return t * t * (3 - 2 * t);
+    }
+
     signal select(int index)
     signal activated(string address)
     signal workspaceChosen(var entry)
@@ -102,7 +109,7 @@ Item {
     // already hidden behind it, so they aren't seen twice.
     Backdrop {
         anchors.fill: parent
-        opacity: Math.min(1, layer.progress * 3)
+        opacity: layer.dimProgress
         topInset: layer.topInset
         base: Commons.Color.background
         wallpaper: layer.wallpaper
@@ -114,7 +121,8 @@ Item {
         id: band
         visible: layer.screens.length > 0
         anchors.horizontalCenter: parent.horizontalCenter
-        y: layer.topInset + 14
+        // The strip drops in from above as the cards settle.
+        y: layer.topInset + 14 - 18 * (1 - layer.progress)
         spacing: 36
         opacity: layer.progress
         z: 20
@@ -204,6 +212,7 @@ Item {
                 iconSource: client ? layer.iconFor(client) : ""
                 progress: layer.progress
                 morph: layer.morph
+                delay: index === layer.selectedIndex || layer.rects.length < 2 ? 0 : 0.18 * index / (layer.rects.length - 1)
                 selected: index === layer.selectedIndex
                 dragged: index === layer.dragIndex
                 onHovered: layer.select(index)
@@ -231,22 +240,18 @@ Item {
         opacity: 0.92
         z: 100
 
-        Rectangle {
+        ThumbFrame {
             anchors.fill: parent
-            anchors.margins: -2
-            anchors.topMargin: 3
-            anchors.bottomMargin: -9
-            radius: 14
-            color: "black"
-            opacity: 0.45
-        }
+            radius: 10
+            emphasized: true
 
-        WindowPicture {
-            anchors.fill: parent
-            toplevel: ghost.client ? layer.toplevelFor(ghost.client.address) : null
-            iconSource: ghost.client ? layer.iconFor(ghost.client) : ""
-            cornerRadius: 10
-            backdrop: Util.withAlpha(Commons.Color.popups.background, 0.9)
+            WindowPicture {
+                anchors.fill: parent
+                toplevel: ghost.client ? layer.toplevelFor(ghost.client.address) : null
+                iconSource: ghost.client ? layer.iconFor(ghost.client) : ""
+                cornerRadius: 0
+                backdrop: Util.withAlpha(Commons.Color.popups.background, 0.9)
+            }
         }
     }
 }

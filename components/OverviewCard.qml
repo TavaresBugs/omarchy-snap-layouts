@@ -18,7 +18,12 @@ Item {
     // False when the real window isn't on screen (another workspace is being
     // looked at): the card then fades instead of travelling from its place.
     property bool morph: true
-    readonly property real travel: morph ? progress : 1
+    // Cards leave their windows one after another (a share of the animation, 0..~0.2),
+    // so the selected one leads and the rest follow.
+    property real delay: 0
+    readonly property real travel: morph ? Math.max(0, Math.min(1, (progress - delay) / (1 - delay))) : 1
+    // The icon and title come in only once the card has nearly arrived.
+    readonly property real chrome: morph ? Math.max(0, Math.min(1, (travel - 0.55) / 0.45)) : progress
 
     property var client: null           // the window's `hyprctl clients` entry
     property var toplevel: null         // its Hyprland toplevel, for the live picture
@@ -54,6 +59,7 @@ Item {
         anchors.fill: parent
         radius: card.cornerRadius
         emphasized: card.selected
+        depth: card.travel
 
         WindowPicture {
             anchors.fill: parent
@@ -70,6 +76,8 @@ Item {
         y: parent.height - height * 0.5
         width: 40
         height: 40
+        opacity: card.chrome
+        scale: 0.8 + 0.2 * card.chrome
         source: card.iconSource
         sourceSize.width: 80
         sourceSize.height: 80
@@ -86,7 +94,7 @@ Item {
         font.family: Qt.application.font.family
         font.pixelSize: Style.font.body
         elide: Text.ElideRight
-        opacity: card.selected ? 1 : 0
+        opacity: card.selected ? card.chrome : 0
         Behavior on opacity { NumberAnimation { duration: 120 } }
     }
 

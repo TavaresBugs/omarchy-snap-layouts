@@ -97,7 +97,10 @@ Item {
                 ThumbFrame {
                     anchors.fill: parent
                     radius: 8
-                    emphasized: thumb.selected || thumb.target || thumb.over
+                    // Strong where the focus is: the viewed workspace when the strip has it,
+                    // or a drop target; the viewed one is only softly marked otherwise.
+                    emphasized: (thumb.selected && strip.focused) || thumb.target || thumb.over
+                    current: thumb.selected && !strip.focused
                     fill: Util.withAlpha(Commons.Color.popups.background, 0.82)
 
                     // The windows, at their real positions, with their live picture.
@@ -153,8 +156,8 @@ Item {
                         }
                         Rectangle {
                             anchors.fill: parent
-                            color: Util.withAlpha(Commons.Color.popups.text, 0.18)
-                            border.color: Util.withAlpha(Commons.Color.popups.text, 0.95)
+                            color: Util.withAlpha(Commons.Color.imagePicker.selectedBorder, 0.2)
+                            border.color: Commons.Color.imagePicker.selectedBorder
                             border.width: 1.5
                         }
                     }
