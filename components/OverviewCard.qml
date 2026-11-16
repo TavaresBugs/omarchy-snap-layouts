@@ -47,13 +47,17 @@ Item {
     height: rect ? rect.rh + (rect.h - rect.rh) * travel : 0
     z: selected ? 10 : 0
     opacity: (morph ? 1 : progress) * (dragged ? 0.35 : (selected ? 1 : 0.9))
-    scale: selected ? 1.05 : 1
     Behavior on opacity { NumberAnimation { duration: 140 } }
-    Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-    transform: Translate {
-        y: card.selected ? -6 : 0
-        Behavior on y { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-    }
+
+    // The selected card is lifted and a little larger, but only as far as it has
+    // left its window: on the window itself (start and end of the animation) it
+    // must be exactly the window's size, or it overshoots the area the window
+    // fills and the two don't line up.
+    property real lift: selected ? 1 : 0
+    Behavior on lift { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+    readonly property real emphasis: lift * travel
+    scale: 1 + 0.05 * emphasis
+    transform: Translate { y: -6 * card.emphasis }
 
     ThumbFrame {
         anchors.fill: parent

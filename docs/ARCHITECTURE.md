@@ -49,7 +49,7 @@ Hyprland handles shortcuts before the focused surface sees a key, so with the ov
 
 ## Animation
 
-`overviewT` (0..1) drives both directions: opening runs it up, `close()` runs it back to 0 and only then hides the overview. Cards sit on their real window at 0 and in their place at 1, each starting a little later than the one before it (the selected card leads), with the icon and title fading in only near the end and the strip dropping in from above; when the viewed workspace is not the one on screen they fade instead. The backdrop reaches full opacity in the first third, so the real windows are hidden while the cards still sit on them. A workspace change from outside (`workspacev2` event) re-reads the state and slides the new set in; events caused by the plugin's own moves are ignored for a moment.
+`overviewT` (0..1) drives both directions: opening runs it up, `close()` runs it back to 0 and only then hides the overview. Cards sit on their real window at 0 and in their place at 1, each starting a little later than the one before it (the selected card leads), with the icon and title fading in only near the end; the strip comes in last and leaves first, so a card returning to a window that fills the screen never grows under it; when the viewed workspace is not the one on screen they fade instead. The backdrop reaches full opacity in the first third, so the real windows are hidden while the cards still sit on them. A workspace change from outside (`workspacev2` event) re-reads the state and slides the new set in; events caused by the plugin's own moves are ignored for a moment.
 
 ## Workspaces
 

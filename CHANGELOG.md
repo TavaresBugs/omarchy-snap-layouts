@@ -22,9 +22,10 @@ Added
 
 - Thumbnails take their colours from the theme, as Omarchy's image picker does: the accent ring marks what is selected; the workspace being looked at gets a softer accent ring while the windows have the focus and the strong one when the strip has it; everything else has a faint rim.
 - One soft shadow (`RectangularShadow`) sized from the frame's height, so small thumbnails and large cards get the same look; the drag ghost uses the same frame.
-- Smoother transition: a long-tailed opening curve and a symmetrical closing one, cards leaving their windows one after another with the selected one first, the workspace strip dropping in, the icon and title appearing only once a card has arrived, and a quick but eased dim.
+- Smoother transition: a long-tailed opening curve and a symmetrical closing one, cards leaving their windows one after another with the selected one first, the workspace strip arriving last and leaving first (so a card returning to a full-screen mosaic window doesn't grow under it), the icon and title appearing only once a card has arrived, and a quick but eased dim.
 
 Fixed
+- On closing, the selected card no longer overshoots its window: its lift and enlargement now fade out as it returns, so it lands exactly on the window's rect (before, a window filling the mosaic was drawn 5% too large, up to the strip, and showed a doubled image at the end).
 - The overview backdrop is one piece: the wallpaper is laid out over the whole screen exactly as the desktop draws it (so it lines up across the bar), the part below the bar is painted, and a single dim covers everything, bar included. It reaches the screen edges, so the focused window's border can't show around it, and it has no corners of its own to show.
 - Overview cards and workspace thumbnails share one frame (`ThumbFrame`): the same shadow, rounded clipping and a ring drawn above the content, so a picture can no longer spill over the outline. Workspace numbers are plain text instead of a badge.
 - Workspace thumbnails show the usable area (without the bar and edge gap), so tiled windows fill them.

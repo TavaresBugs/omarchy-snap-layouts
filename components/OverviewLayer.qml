@@ -51,6 +51,11 @@ Item {
         return t * t * (3 - 2 * t);
     }
 
+    readonly property real stripProgress: {
+        var t = Math.max(0, Math.min(1, (layer.progress - 0.55) / 0.45));
+        return t * t * (3 - 2 * t);
+    }
+
     signal select(int index)
     signal activated(string address)
     signal workspaceChosen(var entry)
@@ -121,10 +126,12 @@ Item {
         id: band
         visible: layer.screens.length > 0
         anchors.horizontalCenter: parent.horizontalCenter
-        // The strip drops in from above as the cards settle.
-        y: layer.topInset + 14 - 18 * (1 - layer.progress)
+        // The strip comes in last and leaves first: it drops in from above once the
+        // cards have mostly arrived, and is gone before they head back, so a card
+        // returning to a window that fills the screen never grows under it.
+        y: layer.topInset + 14 - 18 * (1 - layer.stripProgress)
         spacing: 36
-        opacity: layer.progress
+        opacity: layer.stripProgress
         z: 20
 
         Repeater {
