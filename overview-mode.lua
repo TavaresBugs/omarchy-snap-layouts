@@ -10,7 +10,7 @@
 --
 -- What stays live is reported to the plugin as events, or does what it always
 -- does:
---   Alt+Tab                  closes the overview
+--   Alt+Tab (or your overviewShortcut)  closes the overview
 --   Super+Shift+arrow        swap: a workspace on the strip, a window on the cards
 --   Super+1 .. Super+0       switch workspace, as Omarchy does; the overview follows
 --   Escape                   leaves the submap (Hyprland resets it); the plugin
@@ -27,8 +27,13 @@ local PLUGIN = "io.github.n0rthstar88.snap-layouts:"
 -- Hyprland keeps a submap's binds until its config is reloaded, and defining a
 -- name again would add them a second time. So the name carries a version: bump
 -- it whenever the binds below change, and the new definition is used at once.
-local VERSION = 4
-local SUBMAP = "snap_layouts_overview_v" .. VERSION
+local VERSION = 5
+
+-- The key that closes the overview: the plugin's overviewShortcut option when it
+-- is set (the plugin passes it in), Alt+Tab otherwise. It is part of the name, so
+-- a different key gets its own definition.
+local EXIT = snap_layouts_overview_shortcut or "ALT + TAB"
+local SUBMAP = "snap_layouts_overview_v" .. VERSION .. "_" .. EXIT:gsub("[^%w]", "_")
 
 -- System shortcuts that stay live while the overview is open: { keys, description,
 -- action, options }. They are bound with Omarchy's own `o.bind`, so an action means
@@ -75,7 +80,7 @@ if not snap_layouts_overview_submaps[SUBMAP] then
   end
 
   hl.define_submap(SUBMAP, "escape", function()
-    hl.bind("ALT + TAB", report("overview"), { description = PLUGIN .. "overview" })
+    hl.bind(EXIT, report("overview"), { description = PLUGIN .. "overview" })
 
     for _, direction in ipairs({ "left", "right", "up", "down" }) do
       hl.bind("SUPER + SHIFT + " .. direction, report("swap-" .. direction), { description = PLUGIN .. "swap" })

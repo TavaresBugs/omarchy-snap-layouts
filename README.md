@@ -40,12 +40,27 @@ omarchy plugin add https://github.com/TavaresBugs/omarchy-snap-layouts --enable
 
 The first time it loads, a prompt asks whether to keep drag-to-snap on.
 
-To open the picker with Super+Z, and the window overview with Alt+Tab, add these lines to `~/.config/hypr/bindings.lua`:
+### Keyboard shortcuts
+
+The picker and the window overview have no shortcut until you give them one. Let the plugin bind them, with two commands:
+
+```sh
+omarchy-shell snaplayouts shortcut picker "SUPER + Z"
+omarchy-shell snaplayouts shortcut overview "ALT + TAB"
+```
+
+Write a shortcut the way Omarchy does, in quotes. They are saved as `pickerShortcut` and `overviewShortcut` in `~/.config/omarchy/shell.json` (you can edit them there too), and bound for you from then on, including after a config reload. To remove one, use `off` in place of the keys.
+
+A shortcut you set belongs to the plugin: whatever else is bound to the same keys (Omarchy's Alt+Tab window cycling, or a bind you wrote for the same job) is replaced while the plugin runs, the way Omarchy's own `rebind` does, and the shell log says what it replaced. A config reload brings the original binds back and the plugin takes the keys again. Changing or removing a shortcut reloads your Hyprland config once, because Hyprland can't safely drop a bind at runtime.
+
+Prefer to bind them yourself? Add this to `~/.config/hypr/bindings.lua` instead, and leave the options unset:
 
 ```lua
 o.bind("SUPER + Z", "Snap layouts", hl.dsp.event("io.github.n0rthstar88.snap-layouts:toggle"))
 o.bind("ALT + TAB", "Window overview", hl.dsp.event("io.github.n0rthstar88.snap-layouts:overview"))
 ```
+
+If you do that, still set `overviewShortcut` to the key you chose: while the overview is open the system's shortcuts are paused, and this is the key that closes it. (Setting it also makes the plugin take that key over, so a manual bind on it is replaced by the plugin's own, doing the same thing.)
 
 ## Use
 
@@ -79,13 +94,7 @@ A tinted preview shows where the window will land. Release to snap; move away to
 
 ### Window overview
 
-Bind a key to open it, for example Alt+Tab:
-
-```lua
-o.bind("ALT + TAB", "Window overview", hl.dsp.event("io.github.n0rthstar88.snap-layouts:overview"))
-```
-
-It shows the windows of the current workspace (plus the ones minimized from it) as thumbnails in rows of equal height: one window, two side by side, three as 2+1, four as 2+2, and so on. Set `overviewScope` to `"all"` to list every workspace instead.
+Give it a shortcut (see [Keyboard shortcuts](#keyboard-shortcuts)), for example Alt+Tab. It shows the windows of the current workspace (plus the ones minimized from it) as thumbnails in rows of equal height: one window, two side by side, three as 2+1, four as 2+2, and so on. Set `overviewScope` to `"all"` to list every workspace instead.
 
 Opening runs the real windows into the thumbnails and closing runs them back, so the window you pick lands on itself. A tiled window can never be drawn above floating ones in Hyprland, so when you pick a tiled window that floating windows cover, those floating windows join the tiling layout: everything stays visible and resizable. Pinned and fullscreen windows are left alone.
 
@@ -128,6 +137,7 @@ omarchy-shell snaplayouts choose 0 1        # with the picker open: layout 0, zo
 omarchy-shell snaplayouts drag on           # also: off, status
 omarchy-shell snaplayouts overview          # open or close the window overview
 omarchy-shell snaplayouts focus 0x55d0c8b4  # bring a window forward by address, as choosing it does
+omarchy-shell snaplayouts shortcut overview "ALT + TAB"   # bind a shortcut (picker or overview); "off" removes it
 ```
 
 Layouts and zones count from 0, left to right as shown in the picker. The drag-to-snap choice is saved in `~/.config/omarchy/shell.json`.
@@ -144,7 +154,9 @@ Options go in this plugin's entry in `~/.config/omarchy/shell.json`. Anything mi
   "edgeMargin": 12,
   "edgeCorner": 90,
   "overviewScope": "workspace",
-  "mainMonitor": "" }
+  "mainMonitor": "",
+  "pickerShortcut": "",
+  "overviewShortcut": "" }
 ```
 
 | Option | Default | Meaning |
@@ -154,6 +166,8 @@ Options go in this plugin's entry in `~/.config/omarchy/shell.json`. Anything mi
 | `edgeMargin` | `12` | Pixels from the edge that count as "at the edge" (1 to 80) |
 | `edgeCorner` | `90` | Pixels along an edge that count as a corner (10 to 400) |
 | `overviewScope` | `"workspace"` | `"workspace"` or `"all"` |
+| `pickerShortcut` | `""` | A shortcut the plugin binds for the layout picker, e.g. `"SUPER + Z"`; empty = none. Also set with `shortcut picker` |
+| `overviewShortcut` | `""` | The same for the window overview, e.g. `"ALT + TAB"`; also the key that closes it. Also set with `shortcut overview` |
 | `mainMonitor` | `""` | Connector shown big in the overview strip, e.g. `"DP-3"`; empty = an external monitor if any. Also set by clicking a screen's name |
 
 ## Configuration
@@ -208,7 +222,7 @@ omarchy plugin remove io.github.n0rthstar88.snap-layouts
 
 Then undo whatever you added by hand:
 
-- **Key bindings:** delete the Super+Z and Alt+Tab lines from `~/.config/hypr/bindings.lua`.
+- **Key bindings:** the shortcuts the plugin bound go away with it. If you bound them yourself, delete those lines from `~/.config/hypr/bindings.lua`.
 - **Window limits** (if you installed [the extra](extras/hyprland/README.md#window-limits)): remove `require("hypr.window-limits")` from `~/.config/hypr/hyprland.lua` and delete `~/.config/hypr/window-limits.lua`.
 - **Title bars** (if you installed them): follow [Remove](extras/hyprbars/README.md#remove).
 - **Options:** if an entry with this plugin's id is still in `~/.config/omarchy/shell.json`, delete it. It holds your options, including the main screen chosen in the overview.

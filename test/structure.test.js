@@ -83,6 +83,8 @@ test("every Lua snippet the plugin sends to Hyprland parses", { skip: !luajit &&
         swapWindows: D.swapWindows("0xaa", "0xbb"),
         leave: D.LEAVE_OVERVIEW_MODE
     };
+    const K = load("shortcuts.js");
+    snippets.shortcuts = K.assignLua({ picker: "SUPER + Z", overview: "ALT + TAB" }, { overview: ["Focus on next window"] });
     for (const [name, lua] of Object.entries(snippets)) {
         assert.ok(lua.length > 0, `${name} produced nothing`);
         const r = spawnSync("luajit", ["-bl", "-"], { input: lua, encoding: "utf8" });
@@ -121,4 +123,12 @@ test("every option the README documents is one the settings accept, and the othe
     const readme = read("README.md");
     for (const key of Object.keys(DEFAULTS))
         assert.ok(readme.includes("`" + key + "`"), `option ${key} is not documented in the README`);
+});
+
+test("shortcuts.lua binds the events the library says each shortcut stands for", () => {
+    const lua = read("shortcuts.lua");
+    const { SHORTCUTS } = load("shortcuts.js");
+    for (const [name, event] of Object.entries(SHORTCUTS))
+        assert.ok(lua.includes(`${name} = "${event}"`), `shortcuts.lua does not map ${name} to ${event}`);
+    assert.ok(read("SnapLayouts.qml").includes("io.github.n0rthstar88.snap-layouts:toggle"), "the plugin does not listen for the picker event");
 });

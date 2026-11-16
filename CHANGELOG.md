@@ -27,8 +27,9 @@ Look
 - The backdrop is one piece: the wallpaper laid out over the whole screen exactly as the desktop draws it, one dim over everything including the bar, reaching the screen edges.
 
 Configuration
-- Options in `shell.json`: `edgeSnap`, `edgeDwellMs`, `edgeMargin`, `edgeCorner`, `overviewScope`, `mainMonitor`.
-- IPC: `overview` and `focus <address>`.
+- Shortcuts without editing `bindings.lua`: `omarchy-shell snaplayouts shortcut picker "SUPER + Z"` (and `overview`) saves the shortcut and the plugin binds it, taking the keys over from whatever else is bound there (Omarchy's Alt+Tab cycling, say) and logging what it replaced, and reloading the config only when one is changed or removed. The key that closes the overview follows `overviewShortcut`.
+- Options in `shell.json`: `edgeSnap`, `edgeDwellMs`, `edgeMargin`, `edgeCorner`, `overviewScope`, `mainMonitor`, `pickerShortcut`, `overviewShortcut`.
+- IPC: `overview`, `focus <address>` and `shortcut <picker|overview> <keys|off>`.
 - Optional Hyprland extras: key bindings and a floating-window limiter.
 
 ### Changed

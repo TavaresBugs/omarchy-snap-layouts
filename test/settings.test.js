@@ -15,8 +15,8 @@ test("the overview is limited to the current workspace by default", () => {
 });
 
 test("valid values are used", () => {
-    const o = S.resolve({ edgeSnap: false, edgeDwellMs: 500, edgeMargin: 20, edgeCorner: 120, overviewScope: "all", mainMonitor: "DP-3" });
-    assert.deepEqual(o, { edgeSnap: false, edgeDwellMs: 500, edgeMargin: 20, edgeCorner: 120, overviewScope: "all", mainMonitor: "DP-3" });
+    const o = S.resolve({ edgeSnap: false, edgeDwellMs: 500, edgeMargin: 20, edgeCorner: 120, overviewScope: "all", mainMonitor: "DP-3", pickerShortcut: "SUPER + Z", overviewShortcut: "ALT + TAB" });
+    assert.deepEqual(o, { edgeSnap: false, edgeDwellMs: 500, edgeMargin: 20, edgeCorner: 120, overviewScope: "all", mainMonitor: "DP-3", pickerShortcut: "SUPER + Z", overviewShortcut: "ALT + TAB" });
 });
 
 test("unknown scope falls back to the default", () => {
@@ -49,4 +49,13 @@ test("the main monitor is a connector name or empty", () => {
     assert.equal(S.resolve({ mainMonitor: "eDP-1" }).mainMonitor, "eDP-1");
     assert.equal(S.resolve({ mainMonitor: "x'); evil('" }).mainMonitor, "");
     assert.equal(S.resolve({ mainMonitor: 4 }).mainMonitor, "");
+});
+
+test("shortcuts are written the way Omarchy writes them, and anything else is ignored", () => {
+    assert.equal(S.resolve({ pickerShortcut: "SUPER + Z" }).pickerShortcut, "SUPER + Z");
+    assert.equal(S.resolve({ overviewShortcut: " ALT + TAB " }).overviewShortcut, "ALT + TAB");
+    assert.equal(S.resolve({}).pickerShortcut, "");
+    assert.equal(S.resolve({ pickerShortcut: "HYPER + Z" }).pickerShortcut, "");
+    assert.equal(S.resolve({ overviewShortcut: "ALT + TAB'); os.execute('x" }).overviewShortcut, "");
+    assert.equal(S.resolve({ overviewShortcut: 12 }).overviewShortcut, "");
 });

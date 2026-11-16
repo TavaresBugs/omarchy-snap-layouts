@@ -29,6 +29,7 @@ components/          views              lib/        decisions (pure JS)
 | `dispatch.js` | The Lua sent to Hyprland (moving windows and workspaces, swapping, going to a workspace) |
 | `style.js` | The gap to the screen edge and the border width, read from Hyprland |
 | `settings.js` | What the options in `shell.json` mean, validated |
+| `shortcuts.js` | The plugin's own shortcuts: parsing, and what to add, leave alone or reload for, given the binds that exist |
 
 ## Modes
 
@@ -82,6 +83,10 @@ Omarchy gives each monitor a block of ten workspaces (monitor 1: 1-10, monitor 2
 The gap to the screen edge and the border width are read with `hyprctl -j getoption` on every snapshot and resolved by `lib/style.js` (unreadable answers fall back to defaults); zone geometry and the workspace thumbnails' usable area use them. Only the gap between snapped windows (`innerGap`, flush) is a plugin choice.
 
 The overview backdrop (`Backdrop`) is deliberately not shaped like the windows: it lays the wallpaper over the whole screen the way the desktop does, paints only below the bar, and puts one dim over everything including the bar. Because it matches the real wallpaper pixel for pixel, nothing shows at its edges, so it needs no rounded corners.
+
+## Shortcuts
+
+The options `pickerShortcut` and `overviewShortcut` are bound by the plugin itself, the way it already binds the drag buttons. `ensureShortcutBinds` reads `hyprctl -j binds` and asks `Shortcuts.plan` what to do: bind what is wanted (`shortcuts.lua`, tagging each bind with a description that carries its key; keys another bind holds are first cleared with `hl.unbind`, as Omarchy's `o.rebind` does, and the log says what was replaced, because a shortcut set on purpose belongs to the plugin and Omarchy's own Alt+Tab cycling would otherwise run along with the overview), and, when a bind of the plugin's no longer matches the options, reload the config. Hyprland 0.56.2 crashes on removing a bind, so the plugin only ever adds them; a reload clears runtime binds, and the `configreloaded` event brings the plugin back to bind what is wanted. It checks at start, when the options change, after a reload and every 30 seconds. The same option names the key that closes the modal overview (`overview-mode.lua` takes it as `snap_layouts_overview_shortcut`).
 
 ## Layers and notifications
 

@@ -17,6 +17,7 @@ import "lib/dispatch.js" as Dispatch
 import "lib/windows.js" as Windows
 import "lib/overview.js" as Overview
 import "lib/settings.js" as Settings
+import "lib/shortcuts.js" as Shortcuts
 import "lib/style.js" as SystemStyle
 import "lib/workspaces.js" as Workspaces
 
@@ -279,7 +280,11 @@ Item {
     function enterModal() {
         root.modal = true;
         root.modalSince = Date.now();
-        Quickshell.execDetached(["hyprctl", "eval", "dofile(" + JSON.stringify(root.pluginDir + "/overview-mode.lua") + ")"]);
+        // The key that closes it is the overviewShortcut option, if set (see overview-mode.lua).
+        var exit = root.options.overviewShortcut;
+        Quickshell.execDetached(["hyprctl", "eval", "snap_layouts_overview_shortcut = "
+            + (exit !== "" ? JSON.stringify(exit) : "nil")
+            + "; dofile(" + JSON.stringify(root.pluginDir + "/overview-mode.lua") + ")"]);
     }
 
     function leaveModal() {
@@ -1068,6 +1073,21 @@ Item {
             root.focusWindow(address);
             return "ok";
         }
+        // Set a shortcut the plugin binds for you: `shortcut picker "SUPER + Z"`,
+        // `shortcut overview "ALT + TAB"`; `off` removes it.
+        function shortcut(name: string, keys: string): string {
+            if (name !== "picker" && name !== "overview")
+                return "expected picker or overview";
+            var spec = keys.trim();
+            if (spec === "off")
+                spec = "";
+            else if (!Shortcuts.valid(spec))
+                return "not a shortcut Hyprland understands: " + keys + " (write it like \"SUPER + Z\")";
+            if (!root.setShortcut(name, spec))
+                return "could not save the shortcut";
+            return spec === "" ? name + " shortcut removed"
+                : name + " shortcut set to " + spec + " (anything else bound to those keys is replaced while the plugin runs)";
+        }
         // Drag-to-snap: `drag on`, `drag off`, or `drag status`.
         function drag(state: string): string {
             if (state === "on" || state === "off")
@@ -1114,7 +1134,11 @@ Item {
     readonly property var dragButtons: ["mouse:272", "mouse:273"]
 
     onDragEnabledChanged: root.ensureDragBinds()
-    onSettingsLoadedChanged: root.ensureDragBinds()
+    onSettingsLoadedChanged: {
+        root.ensureDragBinds();
+        root.ensureShortcutBinds();
+    }
+    onOptionsChanged: root.ensureShortcutBinds()
 
     // Adds the drag binds for any button that lacks them. Binds are only ever
     // added, never removed (see hook.lua for why). When drag-to-snap is off
@@ -1163,20 +1187,104 @@ Item {
         }
     }
 
+    // ---- The plugin's own shortcuts (pickerShortcut, overviewShortcut) ----
+
+    property var warnedShortcuts: ({})
+    property double lastShortcutReload: 0
+
+    // Bind the shortcuts set in the options, if they are not bound yet. See
+    // lib/shortcuts.js for what is bound, left alone, or needs a reload.
+    function ensureShortcutBinds() {
+        if (!root.settingsLoaded)
+            return;
+        if (!shortcutsProc.running)
+            shortcutsProc.running = true;
+    }
+
+    Process {
+        id: shortcutsProc
+        command: ["hyprctl", "-j", "binds"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var binds;
+                try {
+                    binds = JSON.parse(text);
+                } catch (e) {
+                    console.warn(root.pluginId + ": could not read hyprctl binds: " + e);
+                    return;
+                }
+                var plan = Shortcuts.plan(binds, { picker: root.options.pickerShortcut, overview: root.options.overviewShortcut });
+                plan.skipped.forEach(function(item) {
+                    var key = item.name + item.spec;
+                    if (root.warnedShortcuts[key])
+                        return;
+                    root.warnedShortcuts[key] = true;
+                    console.warn(root.pluginId + ": the " + item.name + " shortcut " + item.spec + " is not bound: " + item.reason + ".");
+                });
+                // Hyprland can't safely remove a bind, so a changed or dropped
+                // shortcut is cleared by reloading the config; the reload event
+                // brings us back here to bind what is wanted.
+                if (plan.reload) {
+                    var wait = 5000 - (Date.now() - root.lastShortcutReload);
+                    if (wait <= 0) {
+                        root.lastShortcutReload = Date.now();
+                        Quickshell.execDetached(["hyprctl", "reload"]);
+                    } else {
+                        // Reloaded a moment ago: look again as soon as that is over.
+                        shortcutRetry.interval = wait + 200;
+                        shortcutRetry.restart();
+                    }
+                    return;
+                }
+                if (Object.keys(plan.add).length > 0) {
+                    Object.keys(plan.replace).forEach(function(name) {
+                        console.info(root.pluginId + ": the " + name + " shortcut " + plan.add[name] + " replaces: " + plan.replace[name].join(", "));
+                    });
+                    Quickshell.execDetached(["hyprctl", "eval", Shortcuts.assignLua(plan.add, plan.replace)
+                        + "; dofile(" + JSON.stringify(root.pluginDir + "/shortcuts.lua") + ")"]);
+                }
+            }
+        }
+    }
+
+    Timer {
+        id: shortcutRetry
+        onTriggered: root.ensureShortcutBinds()
+    }
+
+    // Set (or, with "off", remove) one of the plugin's shortcuts; saved in shell.json.
+    function setShortcut(name, spec) {
+        if (!root.shell || typeof root.shell.updateEntryInline !== "function") {
+            console.warn(root.pluginId + ": can't save the shortcut");
+            return false;
+        }
+        var settings = Object.assign({}, root.settingsEntry || {});
+        delete settings.id;
+        settings[name + "Shortcut"] = spec;
+        root.shell.updateEntryInline(root.pluginId, settings);
+        return true;
+    }
+
     // Other plugins' Keybind:remove() also deletes these binds when they share
     // a button (Window controls does on startup), so check again now and then.
     Timer {
         interval: 30000
         repeat: true
         running: root.settingsLoaded && root.dragEnabled
-        onTriggered: root.ensureDragBinds()
+        onTriggered: {
+            root.ensureDragBinds();
+            root.ensureShortcutBinds();
+        }
     }
 
     // Lets a config reload finish before checking which binds survived it.
     Timer {
         id: reloadCheck
         interval: 500
-        onTriggered: root.ensureDragBinds()
+        onTriggered: {
+            root.ensureDragBinds();
+            root.ensureShortcutBinds();
+        }
     }
 
     function setDragToSnap(enabled) {
