@@ -147,3 +147,19 @@ test("step wraps around in both directions", () => {
     assert.equal(O.step(1, 1, 3), 2);
     assert.equal(O.step(0, 1, 0), 0);
 });
+
+test("the overview's area sits below the bar, inside the margins", () => {
+    const m = { w: 1536, h: 864, reserved: [0, 26, 0, 0] };
+    const a = O.area(m, false);
+    assert.equal(a.x, O.MARGIN.side);
+    assert.equal(a.y, 26 + O.MARGIN.top);
+    assert.equal(a.w, 1536 - 2 * O.MARGIN.side);
+    assert.equal(a.h, 864 - a.y - O.MARGIN.bottom);
+});
+
+test("with a workspace strip the area starts lower", () => {
+    const m = { w: 1536, h: 864, reserved: [0, 26, 0, 0] };
+    const plain = O.area(m, false), withStrip = O.area(m, true);
+    assert.equal(withStrip.y - plain.y, O.MARGIN.topWithStrip - O.MARGIN.top);
+    assert.ok(withStrip.h < plain.h);
+});

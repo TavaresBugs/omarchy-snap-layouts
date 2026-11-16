@@ -6,7 +6,7 @@
 
 Drag a window to the top of the screen, drop it on the layout you want, then choose which windows fill the other spaces. A snap layout picker in the style of Windows 11, built as a shell plugin for [Omarchy](https://omarchy.org). **Omarchy 4.5 (Quattro) ready.**
 
-This fork adds edge and corner snapping and an Alt+Tab style window overview, and splits the code into tested modules. See [What this fork adds](#what-this-fork-adds).
+This fork adds edge and corner snapping, an Alt+Tab style window overview with a workspace strip (look at, move windows between, and reorder workspaces, on every screen), and splits the code into tested modules. See [What this fork adds](#what-this-fork-adds).
 
 ![Dragging a window onto the layout picker](docs/screenshots/picker-drag.png)
 
@@ -20,6 +20,7 @@ The screenshots show the plugin running in Omarchy's real shell.
 - **Keyboard shortcut:** open the picker for the focused window, including tiled windows, which become floating when snapped.
 - **Edge and corner snap:** drag a window against the left or right edge for a half, a corner for a quarter, or the top edge for the whole usable area. Hold for a moment and a preview appears; let go to snap, move away to cancel.
 - **Window overview (Alt+Tab):** every window of the current workspace as a thumbnail, laid out in tidy rows, with arrow-key and mouse selection. Choosing a window brings it to the front.
+- **Workspace strip:** the workspaces of every screen, with their windows live. Look at one, drag a window onto one, or swap two workspaces' places.
 - **Fits your screen:** zones stay clear of the top bar and dock on each monitor.
 - **Follows your theme:** colours and fonts come from your Omarchy theme.
 
@@ -84,6 +85,10 @@ Bind a key to open it, for example Alt+Tab:
 o.bind("ALT + TAB", "Window overview", hl.dsp.event("io.github.n0rthstar88.snap-layouts:overview"))
 ```
 
+It shows the windows of the current workspace (plus the ones minimized from it) as thumbnails in rows of equal height: one window, two side by side, three as 2+1, four as 2+2, and so on. Set `overviewScope` to `"all"` to list every workspace instead.
+
+Opening runs the real windows into the thumbnails and closing runs them back, so the window you pick lands on itself. A tiled window can never be drawn above floating ones in Hyprland, so when you pick a tiled window that floating windows cover, those floating windows join the tiling layout: everything stays visible and resizable. Pinned and fullscreen windows are left alone.
+
 | Key | Action |
 |---|---|
 | Arrow keys | Select the nearest window in that direction |
@@ -91,33 +96,28 @@ o.bind("ALT + TAB", "Window overview", hl.dsp.event("io.github.n0rthstar88.snap-
 | Tab / Shift+Tab | Next / previous window |
 | Enter or click | Bring the window to the front |
 | Ctrl+Left / Ctrl+Right, PageUp / PageDown | Look at the previous / next workspace |
+| Super+Shift+arrow | Swap the selected window with its neighbour in the real layout |
 | 1 to 9 | Pick a window by its place in the list |
 | Esc or click outside | Close |
 
-On the workspace strip:
+### Workspace strip
 
-| Key | Action |
-|---|---|
-| Left / Right | Look at the previous / next workspace (across screens, main first) |
-| Shift+Left / Shift+Right, Super+Shift+Left / Right | Move the workspace one place: it trades numbers with its neighbour |
-| Enter | Go to the workspace |
-| Down | Back to the windows |
+At the top of the overview, one thumbnail per workspace, labelled as in the bar. Each shows its windows live, at their real positions; empty workspaces are dimmed. Omarchy gives every monitor its own block of ten workspaces, and the strip follows that: the first five of each block always, the others when they hold windows or are being looked at.
 
-Super+Shift+arrow works as it does on the desktop: on the windows it swaps the selected window with its neighbour in the real layout, and on the strip it swaps workspaces.
+With more than one monitor there is one strip per screen: the main screen big, the others small, always in the same order whichever screen the overview is opened on. The main screen is an external monitor if there is one (the laptop panel otherwise, then the first workspace block). Click the name of another screen to make it the main one; the choice is saved as `mainMonitor` in `shell.json`, where you can also set it by hand (a connector name such as `"DP-3"`).
 
-While the overview is open the system's shortcuts are paused (it is modal), so a key meant for it can never act on the windows behind it. Still live: Alt+Tab (close), Super+1 to Super+0 (switch workspace, and the overview follows), Super+Shift+arrow (swap), Escape (close), and the shortcuts you would want while looking at it: screenshots and screen capture (Print, Super+Ctrl+C and the rest of Omarchy's capture keys), notification keys, and the volume, brightness and media keys, so the overview itself can be captured. Other shortcuts, such as the launcher, work again once it closes. To keep another one live, or if you changed one of those, list it in a global `snap_layouts_overview_keep` in your Hyprland config; the list and its format are at the top of [`overview-mode.lua`](overview-mode.lua). This is done with a Hyprland submap defined in [`overview-mode.lua`](overview-mode.lua); the plugin leaves it when the overview closes and also resets it if it starts up while it is active.
+- **Look at a workspace:** click its thumbnail, or press Ctrl+Left/Right or PageUp/PageDown. The windows slide in from the side the workspace lies on. The overview also follows the system: Super+1..5 (or any other way of changing workspace) while it is open moves its view there.
+- **Go to a workspace:** double-click its thumbnail, or press Enter on it.
+- **Move a window:** drag its thumbnail onto any workspace, on any screen (an empty workspace is created on that screen). While you drag, the thumbnail under the pointer previews the result: the window's slot appears in it, with the window it will split (50/50, along the longer side) shrinking to make room. A floating window dropped next to tiled ones is tiled on arrival.
+- **Reorder workspaces:** drag a thumbnail onto another one on the same screen, or press Shift+Left/Right (or Super+Shift+Left/Right) on the strip. The two trade numbers and each keeps its windows, so "2 comes to 1 and 1 goes to 2".
 
-The overview also follows the system: pressing Super+1..5 (or any other way of changing workspace) while it is open moves its view to that workspace.
+On the strip, Left/Right look at the previous/next workspace (across screens, main first), Enter goes to it and Down returns to the windows.
 
-It shows the windows of the current workspace, plus the ones minimized from it; set `overviewScope` to `"all"` to list every workspace.
+### The overview is modal
 
-**Workspace strip.** At the top, one thumbnail per workspace of the monitor you are on, following Omarchy's per-monitor blocks of ten (the first five always, the others when they hold windows or are current), labelled like the bar. Each thumbnail shows its windows live, at their real positions; empty workspaces are dimmed. Click one, or press Ctrl+Left/Right or PageUp/PageDown, to look at that workspace's windows. Thumbnails are arranged in rows of equal height: one window, two side by side, three as 2+1, four as 2+2, and so on.
+While it is open the system's shortcuts are paused, so a key meant for the overview can never act on the windows behind it (Super+Shift+arrow would otherwise swap, even across monitors, a window you can't see). Still live: Alt+Tab (close), Super+1 to Super+0 (switch workspace), Super+Shift+arrow (swap), Escape (close), and what you would want while looking at it: screenshots and screen capture (Print, Super+Ctrl+C and the rest of Omarchy's capture keys), notification keys, and the volume, brightness and media keys, so the overview itself can be captured. Everything else, such as the launcher, works again once it closes.
 
-**Reordering workspaces.** Drag a thumbnail onto another one on the same screen, or press Shift+Left/Right on the strip, and the two trade numbers, each keeping its windows (so "2 comes to 1 and 1 goes to 2"). Double-click a thumbnail, or press Enter on it, to go to that workspace.
-
-**Moving windows.** Drag a thumbnail onto any workspace in the strip to send the window there without leaving the overview. While you drag, the workspace under the pointer previews the result: the window's slot appears in the thumbnail, with the window it will split (50/50, along the longer side) shrinking to make room. A floating window dropped next to tiled ones is tiled on arrival. With more than one monitor there is one strip per screen: the main screen is big and the others small, always in the same order whichever screen you open the overview on. The main screen is an external monitor if there is one (the laptop panel otherwise, then the first workspace block). Click the name of another screen to make it the main one; the choice is saved as `mainMonitor` in `shell.json`, where you can also set it by hand (a connector name such as `"DP-3"`). Changing workspace slides the windows in from the side the new workspace lies on. Opening runs the real windows into the thumbnails and closing runs them back, so the window you pick lands on itself. A window can be dropped onto a workspace of any screen (an empty workspace is created on that screen). Clicking a thumbnail in any strip shows that workspace's windows.
-
-A tiled window can never be drawn above floating ones in Hyprland. When you pick a tiled window that floating windows cover, those floating windows join the tiling layout, so everything stays visible and resizable. Pinned and fullscreen windows are left alone.
+To keep another shortcut live, or if you changed one of those, list it in a global `snap_layouts_overview_keep` in your Hyprland config; the format is at the top of [`overview-mode.lua`](overview-mode.lua), which defines the Hyprland submap that does this. The plugin leaves the submap when the overview closes, and resets it if it starts up while it is active.
 
 ## Commands
 

@@ -73,7 +73,6 @@ Item {
     readonly property var gaps: ({ outer: style.outer, inner: innerGap, border: style.border })
     readonly property var cardMetrics: ({ padding: cardPadding, gap: thumbGap, thumbHeight: thumbHeight })
     readonly property var edgeOptions: ({ margin: edgeMargin, corner: edgeCorner })
-    readonly property var overviewOptions: ({ gapX: 40, gapY: 62, maxHeightFraction: 0.62 })
 
 
     // "" hidden, "picker" (Super+Z), "drag" (window held at the top edge),
@@ -168,16 +167,10 @@ Item {
         var windows = list.map(function(c) {
             return { at: c.at, size: c.size, monitor: root.monitorById(c.monitor) || root.monitor };
         });
-        return Overview.layoutRows(windows, area, root.overviewOptions);
+        return Overview.layoutRows(windows, area, Overview.LAYOUT);
     }
 
-    function overviewNeighbor(dir) {
-        root.overviewIndex = Overview.neighbor(root.overviewRects, root.overviewIndex, dir);
-    }
 
-    function overviewMove(delta) {
-        root.overviewIndex = Overview.step(root.overviewIndex, delta, root.candidates.length);
-    }
 
     function toggleOverview() {
         if (root.mode === "overview")
@@ -250,8 +243,7 @@ Item {
                     root.overviewIndex = i;
             root.pendingSelect = "";
         }
-        var top = m.reserved[1] + (root.workspaceScreens.length > 0 ? 138 : 50);
-        root.overviewRects = root.overviewLayout(list, { x: 70, y: top, w: m.w - 140, h: m.h - top - 70 });
+        root.overviewRects = root.overviewLayout(list, Overview.area(m, root.workspaceScreens.length > 0));
         if (slide === undefined) {
             root.overviewT = 0;
             overviewAnim.restart();
@@ -569,7 +561,7 @@ Item {
         });
         var bottom = root.assistPageCount() > 1 ? 56 : 28;
         var area = { x: 24, y: 70, w: zone.w - 48, h: zone.h - 70 - bottom };
-        return Overview.layoutRows(windows, area, { gapX: 28, gapY: 56, maxHeightFraction: 0.7 });
+        return Overview.layoutRows(windows, area, Overview.ASSIST_LAYOUT);
     }
 
     function thumbRects() {

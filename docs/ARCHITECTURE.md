@@ -14,6 +14,22 @@ components/          views              lib/        decisions (pure JS)
 
 **`SnapLayouts.qml`** owns what is left: the current mode, polling `hyprctl` while a button is held, the Hyprland and shell events, the IPC handler, reading `shell.json`, and issuing `hyprctl eval` commands. It converts between Hyprland's data and the libraries' inputs, and feeds results to the components.
 
+## The libraries
+
+| File | Decides |
+|---|---|
+| `layouts.js` | The layouts, where a zone lands on a monitor, the picker's geometry and hit test |
+| `edge.js` | Which layout and zone a pointer against an edge or corner asks for |
+| `monitors.js` | Hyprland's monitors converted to logical pixels |
+| `windows.js` | Which windows are offered and in what order; which floating windows cover a tiled one |
+| `overview.js` | The overview's thumbnail layout and area, and geometric arrow-key navigation |
+| `navigation.js` | What a key does in the overview, given where the focus is |
+| `workspaces.js` | Omarchy's per-monitor workspace blocks, the strips, the drop preview |
+| `motion.js` | Animation tokens, and the motion that follows from the windows' real geometry |
+| `dispatch.js` | The Lua sent to Hyprland (moving windows and workspaces, swapping, going to a workspace) |
+| `style.js` | The gap to the screen edge and the border width, read from Hyprland |
+| `settings.js` | What the options in `shell.json` mean, validated |
+
 ## Modes
 
 `mode` is one of:
@@ -37,7 +53,7 @@ components/          views              lib/        decisions (pure JS)
 
 ## Overview
 
-`startOverview` takes a snapshot, filters and orders the windows (`Windows`), lays them out (`Overview.layoutRows`) and sets `overviewT` from 0 to 1, which `OverviewCard` uses to slide each thumbnail from the real window's rect to its place. Choosing a window goes through `focusWindow`: floating windows covering a tiled target are tiled, a minimized window is restored, then the window is focused and raised.
+`startOverview` takes a snapshot, filters and orders the windows (`Windows`), lays them out in `Overview.area` (`Overview.layoutRows`) and sets `overviewT` from 0 to 1, which `OverviewCard` uses to slide each thumbnail from the real window's rect to its place. Choosing a window goes through `focusWindow`: floating windows covering a tiled target are tiled, a minimized window is restored, then the window is focused and raised.
 
 ## Keys
 
@@ -45,7 +61,7 @@ components/          views              lib/        decisions (pure JS)
 
 ## Modal overview
 
-Hyprland handles shortcuts before the focused surface sees a key, so with the overview open a key like Super+Shift+arrow would also act on the windows behind it. `overview-mode.lua` (sent with `hyprctl eval` on every open) defines and enters a submap in which only a few binds exist: Alt+Tab, Super+Shift+arrow (reported to the plugin as `swap-<direction>` events), Super+1..0 (Omarchy's workspace focus) Escape (the submap's reset key), and a `KEEP` list of capture, notification and hardware keys re-bound through Omarchy's own `o.bind` (extendable with a global `snap_layouts_overview_keep`). Unbound keys go on to the overview. `hide()` leaves the submap; a `submap` event with an empty name (Escape) closes the overview; and the plugin resets the submap when it starts, so nothing can leave the shortcuts paused.
+Hyprland handles shortcuts before the focused surface sees a key, so with the overview open a key like Super+Shift+arrow would also act on the windows behind it. `overview-mode.lua` (sent with `hyprctl eval` on every open) defines and enters a submap in which only a few binds exist: Alt+Tab, Super+Shift+arrow (reported to the plugin as `swap-<direction>` events), Super+1..0 (Omarchy's workspace focus), Escape (the submap's reset key), and a `KEEP` list of capture, notification and hardware keys re-bound through Omarchy's own `o.bind` (extendable with a global `snap_layouts_overview_keep`). Unbound keys go on to the overview. `hide()` leaves the submap; a `submap` event with an empty name (Escape) closes the overview; and the plugin resets the submap when it starts, so nothing can leave the shortcuts paused.
 
 ## Animation
 
@@ -73,4 +89,4 @@ Notifications live on the Overlay layer. The overview uses the Top layer so noti
 
 ## Adding a feature
 
-Put the decision in `lib/` with a test first; add or extend a component for the view; wire both in `SnapLayouts.qml`. If it needs a user option, add it to `lib/settings.js` with a default and a test, then document it in the README.
+Put the decision in `lib/` with a test first (`test/structure.test.js` will then check that the QML only calls what exists); add or extend a component for the view; wire both in `SnapLayouts.qml`. If it needs a user option, add it to `lib/settings.js` with a default and a test, then document it in the README.
