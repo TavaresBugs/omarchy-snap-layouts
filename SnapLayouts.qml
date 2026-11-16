@@ -7,6 +7,11 @@ import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
+import "lib/layouts.js" as Layouts
+import "lib/edge.js" as Edge
+import "lib/monitors.js" as Monitors
+import "lib/windows.js" as Windows
+import "lib/overview.js" as Overview
 
 // Windows 11-style snap layouts for floating Hyprland windows.
 //
@@ -44,18 +49,15 @@ Item {
     // dragging a window before the picker appears.
     readonly property int dragTriggerDistance: 30
 
-    // Zones are [x, y, width, height] as fractions of the usable screen area.
-    readonly property var layouts: [
-        [[0, 0, 0.5, 1], [0.5, 0, 0.5, 1]],
-        [[0, 0, 2 / 3, 1], [2 / 3, 0, 1 / 3, 1]],
-        [[0, 0, 1 / 3, 1], [1 / 3, 0, 2 / 3, 1]],
-        [[0, 0, 1 / 3, 1], [1 / 3, 0, 1 / 3, 1], [2 / 3, 0, 1 / 3, 1]],
-        [[0, 0, 0.5, 1], [0.5, 0, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]],
-        [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]],
-        // Not shown in the picker: the whole usable area, used by edge snap.
-        [[0, 0, 1, 1]]
-    ]
-    readonly property int pickerCount: 6
+    // Layout data and geometry live in lib/layouts.js.
+    readonly property var layouts: Layouts.LAYOUTS
+    readonly property int pickerCount: Layouts.PICKER_COUNT
+
+    // Settings handed to the pure libraries.
+    readonly property var gaps: ({ outer: outerGap, inner: innerGap, border: borderSize })
+    readonly property var cardMetrics: ({ padding: cardPadding, gap: thumbGap, thumbHeight: thumbHeight })
+    readonly property var edgeOptions: ({ margin: edgeMargin, corner: edgeCorner })
+    readonly property var overviewOptions: ({ gapX: 40, gapY: 62, maxHeightFraction: 0.62 })
 
 
     // "" hidden, "picker" (Super+Z), "drag" (window held at the top edge),
@@ -92,17 +94,6 @@ Item {
 
     // Window overview (Alt+Tab): every open window, pick one to bring forward.
     property int overviewIndex: 0
-    // Which keycap in the hint bar is lit for a moment after the key is pressed.
-    property string hintFlash: ""
-    function flashHint(key) {
-        root.hintFlash = key;
-        hintFlashTimer.restart();
-    }
-    Timer {
-        id: hintFlashTimer
-        interval: 170
-        onTriggered: root.hintFlash = ""
-    }
     property var overviewRects: []
     // 0 = every window sits where it really is, 1 = settled in the overview.
     property real overviewT: 1
@@ -116,104 +107,20 @@ Item {
         easing.type: Easing.OutCubic
     }
 
-    // Rows of equal-height thumbnails, like GNOME's overview: stable and tidy.
-    // Windows keep the reading order of where they really are (top to bottom in
-    // bands, left to right inside a band). The number of rows is whichever
-    // lets the thumbnails come out biggest. The result is returned in the same
-    // order as `list`, each with its real rect (rx..rh) for the opening animation.
-    function overviewLayout(list, ax, ay, aw, ah) {
-        var n = list.length;
-        var gapX = 40, gapY = 62;
-        var items = [];
-        for (var i = 0; i < n; i++) {
-            var c = list[i];
-            var m = root.monitorById(c.monitor) || root.monitor;
-            var rw = Math.max(1, c.size[0]), rh = Math.max(1, c.size[1]);
-            var lx = c.at[0] - m.x, ly = c.at[1] - m.y;
-            items.push({
-                i: i,
-                aspect: Math.max(0.55, Math.min(2.6, rw / rh)),
-                cx: lx + rw / 2,
-                cy: ly + rh / 2,
-                band: Math.floor((ly + rh / 2) / (m.h * 0.4)),
-                rx: lx, ry: ly, rw: rw, rh: rh
-            });
-        }
-        var order = items.slice().sort(function(p, q) {
-            if (p.band !== q.band)
-                return p.band - q.band;
-            return p.cx - q.cx;
+    // Thumbnails in rows of equal height; the maths is in lib/overview.js.
+    function overviewLayout(list, area) {
+        var windows = list.map(function(c) {
+            return { at: c.at, size: c.size, monitor: root.monitorById(c.monitor) || root.monitor };
         });
-
-        // 1 -> 1 | 2 -> 2 side by side | 3 -> 2 + 1 | 4 -> 2 + 2 | 5 -> 3 + 2 | 6 -> 3 + 3 | ...
-        var cols = n <= 2 ? n : (n <= 4 ? 2 : (n <= 6 ? 3 : 4));
-        var rows = [];
-        for (var pos = 0; pos < n; pos += cols)
-            rows.push(order.slice(pos, pos + cols));
-        var R = rows.length;
-
-        // One common height for every row; it must fit the widest row and the
-        // total height, and it is capped so a lone window isn't enormous.
-        var hFit = 1e9;
-        for (var r = 0; r < R; r++) {
-            var sumA = 0;
-            for (var q = 0; q < rows[r].length; q++)
-                sumA += rows[r][q].aspect;
-            hFit = Math.min(hFit, (aw - gapX * (rows[r].length - 1)) / sumA);
-        }
-        var best = { h: Math.min(hFit, (ah - gapY * (R - 1)) / R, ah * 0.62), rows: rows };
-
-        var out = new Array(n);
-        var rowsB = best.rows;
-        var totalH = best.h * rowsB.length + gapY * (rowsB.length - 1);
-        var y = ay + Math.max(0, (ah - totalH) / 2);
-        for (var rr = 0; rr < rowsB.length; rr++) {
-            var rowW = gapX * (rowsB[rr].length - 1);
-            for (var w = 0; w < rowsB[rr].length; w++)
-                rowW += rowsB[rr][w].aspect * best.h;
-            var x = ax + (aw - rowW) / 2;
-            for (var u = 0; u < rowsB[rr].length; u++) {
-                var it = rowsB[rr][u];
-                var width = it.aspect * best.h;
-                out[it.i] = {
-                    x: Math.round(x), y: Math.round(y),
-                    w: Math.round(width), h: Math.round(best.h),
-                    rx: it.rx, ry: it.ry, rw: it.rw, rh: it.rh
-                };
-                x += width + gapX;
-            }
-            y += best.h + gapY;
-        }
-        return out;
+        return Overview.layoutRows(windows, area, root.overviewOptions);
     }
 
-    // Arrow keys: the nearest window in that direction from the selected one.
-    // Windows lying more sideways than the direction asked (a cone) are penalised.
     function overviewNeighbor(dir) {
-        var rects = root.overviewRects;
-        var cur = rects[root.overviewIndex];
-        if (!cur)
-            return;
-        var horizontal = dir === "left" || dir === "right";
-        var cx = cur.x + cur.w / 2, cy = cur.y + cur.h / 2;
-        var best = -1, bestScore = 1e9;
-        for (var i = 0; i < rects.length; i++) {
-            if (i === root.overviewIndex)
-                continue;
-            var dx = rects[i].x + rects[i].w / 2 - cx;
-            var dy = rects[i].y + rects[i].h / 2 - cy;
-            if ((dir === "up" && dy >= -4) || (dir === "down" && dy <= 4)
-                    || (dir === "left" && dx >= -4) || (dir === "right" && dx <= 4))
-                continue;
-            var score = horizontal ? Math.abs(dx) + 2.5 * Math.abs(dy)
-                                   : Math.abs(dy) + 2.5 * Math.abs(dx);
-            if (score < bestScore) {
-                bestScore = score;
-                best = i;
-            }
-        }
-        if (best >= 0)
-            root.overviewIndex = best;
+        root.overviewIndex = Overview.neighbor(root.overviewRects, root.overviewIndex, dir);
+    }
+
+    function overviewMove(delta) {
+        root.overviewIndex = Overview.step(root.overviewIndex, delta, root.candidates.length);
     }
 
     function toggleOverview() {
@@ -229,48 +136,22 @@ Item {
             m = root.monitors[0];
         if (!m)
             return;
-        var list = [];
-        for (var i = 0; i < root.clients.length; i++)
-            if (root.isSnappable(root.clients[i]))
-                list.push(root.clients[i]);
+        var list = Windows.sortForOverview(root.clients.filter(Windows.isSnappable));
         if (list.length === 0)
             return;
-        // Workspace order first (minimized last), then most recently used.
-        list.sort(function(a, b) {
-            var wa = Number(a.workspace.id) > 0 ? Number(a.workspace.id) : 1000;
-            var wb = Number(b.workspace.id) > 0 ? Number(b.workspace.id) : 1000;
-            if (wa !== wb)
-                return wa - wb;
-            return Number(a.focusHistoryID) - Number(b.focusHistoryID);
-        });
-        // Start on the window used just before the current one, like Alt+Tab.
-        var start = 0, best = 1e9;
-        for (var j = 0; j < list.length; j++) {
-            var h = Number(list[j].focusHistoryID);
-            if (h > 0 && h < best) {
-                best = h;
-                start = j;
-            }
-        }
+        var top = m.reserved[1] + 50;
         root.monitor = m;
         root.targetAddress = "";
         root.placedAddresses = [];
         root.candidates = list;
-        root.overviewIndex = start;
+        root.overviewIndex = Windows.previousWindowIndex(list);
         root.assistPage = 0;
-        var top = m.reserved[1] + 50;
-        root.overviewRects = root.overviewLayout(list, 70, top, m.w - 140, m.h - top - 120);
+        root.overviewRects = root.overviewLayout(list, { x: 70, y: top, w: m.w - 140, h: m.h - top - 120 });
         root.overviewT = 0;
         root.mode = "overview";
         overviewAnim.restart();
     }
 
-    function overviewMove(delta) {
-        var n = root.candidates.length;
-        if (n === 0)
-            return;
-        root.overviewIndex = ((root.overviewIndex + delta) % n + n) % n;
-    }
 
     // Bring a window to the front: restore it if minimized, switch to its
     // workspace, focus it, and raise it above any floating windows on top.
@@ -281,20 +162,10 @@ Item {
         // A tiled window can't be raised above floating ones, so the floating
         // windows covering it join the mosaic instead: everything stays tiled,
         // visible side by side, and resizable.
-        if (c && c.floating === false && c.workspace && Number(c.workspace.id) > 0) {
-            for (var k = 0; k < root.clients.length; k++) {
-                var o = root.clients[k];
-                if (o.address === c.address || !o.floating || o.pinned || Number(o.fullscreen) > 0)
-                    continue;
-                if (!o.workspace || Number(o.workspace.id) !== Number(c.workspace.id))
-                    continue;
-                var overlaps = o.at[0] < c.at[0] + c.size[0] && o.at[0] + o.size[0] > c.at[0]
-                    && o.at[1] < c.at[1] + c.size[1] && o.at[1] + o.size[1] > c.at[1];
-                if (overlaps)
-                    lua.push("hl.dispatch(hl.dsp.window.float({ action = 'off', window = 'address:" + o.address + "' }))");
-            }
-        }
-        if (c && c.workspace && String(c.workspace.name) === "special:minimized" && root.monitor)
+        Windows.floatsCovering(c, root.clients).forEach(function(covering) {
+            lua.push("hl.dispatch(hl.dsp.window.float({ action = 'off', window = 'address:" + covering + "' }))");
+        });
+        if (c && c.workspace && String(c.workspace.name) === Windows.MINIMIZED_WORKSPACE && root.monitor)
             lua.push("hl.dispatch(hl.dsp.window.move({ workspace = '" + root.monitor.workspaceId + "', window = '" + sel + "' }))");
         lua.push("hl.dispatch(hl.dsp.focus({ window = '" + sel + "' }))");
         lua.push("hl.dispatch(hl.dsp.window.bring_to_top())");
@@ -303,11 +174,6 @@ Item {
     }
 
     // The overview panel covers the usable area of the screen, with a margin.
-    function overviewRect() {
-        var r = root.zoneScreenRect(6, 0);
-        var inset = 28;
-        return { x: r.x + inset, y: r.y + inset, w: r.w - 2 * inset, h: r.h - 2 * inset };
-    }
 
     property int assistLayout: -1
     property var assistZones: []
@@ -323,61 +189,20 @@ Item {
 
     // ---------- Geometry ----------
 
-    function monitorFromIpc(m) {
-        var scale = Number(m.scale) || 1;
-        var rotated = Number(m.transform) % 2 === 1;
-        var w = (rotated ? m.height : m.width) / scale;
-        var h = (rotated ? m.width : m.height) / scale;
-        return {
-            name: String(m.name),
-            x: Number(m.x),
-            y: Number(m.y),
-            w: w,
-            h: h,
-            reserved: m.reserved && m.reserved.length === 4 ? m.reserved : [0, 0, 0, 0],
-            workspaceId: m.activeWorkspace ? Number(m.activeWorkspace.id) : 1
-        };
-    }
 
     function monitorAt(x, y) {
-        for (var i = 0; i < root.monitors.length; i++) {
-            var m = root.monitors[i];
-            if (x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h)
-                return m;
-        }
-        return null;
+        return Monitors.at(root.monitors, x, y);
     }
 
     function monitorById(id) {
-        for (var i = 0; i < root.monitorsIpc.length; i++)
-            if (Number(root.monitorsIpc[i].id) === Number(id))
-                return root.monitorFromIpc(root.monitorsIpc[i]);
-        return null;
+        return Monitors.byId(root.monitorsIpc, id);
     }
     property var monitorsIpc: []
 
     // Where a zone lands on screen, in global logical pixels, already inset
     // for gaps and the window border.
     function zoneScreenRect(layoutIndex, zoneIndex) {
-        var m = root.monitor;
-        var res = m.reserved;
-        var wx = m.x + res[0] + root.outerGap;
-        var wy = m.y + res[1] + root.outerGap;
-        var ww = m.w - res[0] - res[2] - 2 * root.outerGap;
-        var wh = m.h - res[1] - res[3] - 2 * root.outerGap;
-        var z = root.layouts[layoutIndex][zoneIndex];
-        var half = root.innerGap / 2;
-        var x1 = wx + z[0] * ww + (z[0] > 0.001 ? half : 0);
-        var x2 = wx + (z[0] + z[2]) * ww - (z[0] + z[2] < 0.999 ? half : 0);
-        var y1 = wy + z[1] * wh + (z[1] > 0.001 ? half : 0);
-        var y2 = wy + (z[1] + z[3]) * wh - (z[1] + z[3] < 0.999 ? half : 0);
-        // Round the edges, not the sizes, so neighbours share an exact edge.
-        var b = root.borderSize;
-        var left = Math.round(x1) + b;
-        var right = Math.round(x2) - b;
-        var topEdge = Math.round(y1) + b;
-        var bottom = Math.round(y2) - b;
-        return { x: left, y: topEdge, w: right - left, h: bottom - topEdge };
+        return Layouts.zoneScreenRect(root.monitor, root.gaps, layoutIndex, zoneIndex);
     }
 
     // The picker card, in coordinates local to the monitor's overlay.
@@ -385,59 +210,22 @@ Item {
     readonly property int thumbGap: 12
     readonly property int thumbHeight: 76
 
-    function thumbWidth() {
-        var aspect = root.monitor ? root.monitor.w / root.monitor.h : 16 / 9;
-        return Math.round(root.thumbHeight * Math.max(1.3, Math.min(aspect, 2.4)));
-    }
 
     function cardRect() {
-        var n = root.pickerCount;
-        var w = 2 * root.cardPadding + n * root.thumbWidth() + (n - 1) * root.thumbGap;
-        var h = 2 * root.cardPadding + root.thumbHeight;
-        var mw = root.monitor ? root.monitor.w : w;
-        var top = root.monitor ? root.monitor.reserved[1] : 0;
-        return { x: Math.round((mw - w) / 2), y: top + 12, w: w, h: h };
+        return Layouts.cardRect(root.monitor, root.cardMetrics);
     }
 
     function thumbRect(i) {
-        var c = root.cardRect();
-        var tw = root.thumbWidth();
-        return {
-            x: c.x + root.cardPadding + i * (tw + root.thumbGap),
-            y: c.y + root.cardPadding,
-            w: tw,
-            h: root.thumbHeight
-        };
+        return Layouts.thumbRect(root.monitor, root.cardMetrics, i);
     }
 
     // A zone inside a layout thumbnail, relative to that thumbnail.
     function zoneThumbRect(layoutIndex, zoneIndex, tw, th) {
-        var inset = 4;
-        var half = 1.5;
-        var iw = tw - 2 * inset;
-        var ih = th - 2 * inset;
-        var z = root.layouts[layoutIndex][zoneIndex];
-        var x1 = inset + z[0] * iw + (z[0] > 0.001 ? half : 0);
-        var x2 = inset + (z[0] + z[2]) * iw - (z[0] + z[2] < 0.999 ? half : 0);
-        var y1 = inset + z[1] * ih + (z[1] > 0.001 ? half : 0);
-        var y2 = inset + (z[1] + z[3]) * ih - (z[1] + z[3] < 0.999 ? half : 0);
-        return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+        return Layouts.zoneThumbRect(layoutIndex, zoneIndex, tw, th);
     }
 
     function hitTest(lx, ly) {
-        for (var i = 0; i < root.pickerCount; i++) {
-            var t = root.thumbRect(i);
-            if (lx < t.x || lx >= t.x + t.w || ly < t.y || ly >= t.y + t.h)
-                continue;
-            for (var j = 0; j < root.layouts[i].length; j++) {
-                var z = root.zoneThumbRect(i, j, t.w, t.h);
-                // Generous hit boxes: the gaps between zones count too.
-                if (lx >= t.x + z.x - 2 && lx < t.x + z.x + z.w + 2
-                        && ly >= t.y + z.y - 2 && ly < t.y + z.y + z.h + 2)
-                    return { layout: i, zone: j };
-            }
-        }
-        return { layout: -1, zone: -1 };
+        return Layouts.hitTest(root.monitor, root.cardMetrics, lx, ly);
     }
 
     // ---------- Window helpers ----------
@@ -477,30 +265,12 @@ Item {
         return path;
     }
 
-    function isSnappable(c) {
-        if (!c || !c.address || c.mapped === false || c.hidden === true)
-            return false;
-        var ws = c.workspace || {};
-        var name = String(ws.name || "");
-        return Number(ws.id) > 0 || name === "special:minimized";
-    }
 
     function refreshCandidates() {
-        var list = [];
-        for (var i = 0; i < root.clients.length; i++) {
-            var c = root.clients[i];
-            if (root.isSnappable(c) && root.placedAddresses.indexOf(c.address) === -1)
-                list.push(c);
-        }
-        var wsId = root.monitor ? root.monitor.workspaceId : -1;
-        list.sort(function(a, b) {
-            var aHere = Number(a.workspace.id) === wsId ? 0 : 1;
-            var bHere = Number(b.workspace.id) === wsId ? 0 : 1;
-            if (aHere !== bHere)
-                return aHere - bHere;
-            return Number(a.focusHistoryID) - Number(b.focusHistoryID);
+        var offered = root.clients.filter(function(c) {
+            return Windows.isSnappable(c) && root.placedAddresses.indexOf(c.address) === -1;
         });
-        root.candidates = list;
+        root.candidates = Windows.sortForAssist(offered, root.monitor ? root.monitor.workspaceId : -1);
     }
 
     function placeWindow(address, layoutIndex, zoneIndex) {
@@ -650,7 +420,7 @@ Item {
                 root.monitorsIpc = s[0] || [];
                 var mons = [];
                 for (var i = 0; i < root.monitorsIpc.length; i++)
-                    mons.push(root.monitorFromIpc(root.monitorsIpc[i]));
+                    mons.push(Monitors.fromIpc(root.monitorsIpc[i]));
                 root.monitors = mons;
                 root.clients = s[1] || [];
                 root.activeIpc = s[2] && s[2].address ? s[2] : null;
@@ -662,7 +432,7 @@ Item {
                 else if (root.snapshotReason === "overview")
                     root.startOverview();
                 else if (root.snapshotReason === "press" && root.buttonDown) {
-                    root.dragStart = root.positionsOf(root.clients);
+                    root.dragStart = Windows.positionsOf(root.clients);
                     dragPoll.start();
                 }
             }
@@ -690,7 +460,7 @@ Item {
             // missed release event can't leave this running forever either.
             if ((!root.dragging && held > 1500) || held > 60000) {
                 stop();
-                if (root.mode === "drag" || root.mode === "hint" || root.mode === "edge")
+                if (root.mode === "drag" || root.mode === "edge")
                     root.close();
                 return;
             }
@@ -701,35 +471,12 @@ Item {
 
     property string dragAddress: ""
 
-    function positionsOf(list) {
-        var map = {};
-        for (var i = 0; i < (list || []).length; i++)
-            map[list[i].address] = { at: list[i].at, size: list[i].size };
-        return map;
-    }
 
     // Which zone the pointer is asking for, if it is against an edge/corner.
     // Layout 0 = halves, layout 5 = quarters.
     function edgeTarget(m, cur) {
-        var lx = cur.x - m.x;
-        var ly = cur.y - m.y;
-        var E = root.edgeMargin;
-        var C = root.edgeCorner;
-        var nearL = lx <= E, nearR = lx >= m.w - E;
-        var nearT = ly <= E, nearB = ly >= m.h - E;
-        var cL = lx <= C, cR = lx >= m.w - C;
-        var cT = ly <= C, cB = ly >= m.h - C;
-        var layout = -1, zone = -1;
-        if ((nearL && cT) || (nearT && cL)) { layout = 5; zone = 0; }
-        else if ((nearR && cT) || (nearT && cR)) { layout = 5; zone = 1; }
-        else if ((nearL && cB) || (nearB && cL)) { layout = 5; zone = 2; }
-        else if ((nearR && cB) || (nearB && cR)) { layout = 5; zone = 3; }
-        else if (nearT) { layout = 6; zone = 0; }
-        else if (nearL) { layout = 0; zone = 0; }
-        else if (nearR) { layout = 0; zone = 1; }
-        if (layout < 0)
-            return null;
-        return { layout: layout, zone: zone, key: layout + ":" + zone };
+        var t = Edge.edgeTarget(m, cur, root.edgeOptions);
+        return t ? { layout: Layouts.INDEX[t.layout], zone: t.zone, key: t.key } : null;
     }
 
     // Edge snap is a quick fit: place the window and stop, no snap assist.
@@ -842,10 +589,6 @@ Item {
         dragPoll.stop();
         root.dragging = false;
         root.edgePending = "";
-        if (root.mode === "hint") {
-            root.close();
-            return;
-        }
         if (root.mode !== "drag" && root.mode !== "edge")
             return;
         var layoutIndex = root.hoverLayout;
@@ -1216,9 +959,9 @@ Item {
             WlrLayershell.layer: (root.mode === "overview"
                     && !(root.activeIpc && Number(root.activeIpc.fullscreen) > 0))
                 ? WlrLayer.Top : WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: (root.mode === "drag" || root.mode === "edge" || root.mode === "hint") ? WlrKeyboardFocus.None : WlrKeyboardFocus.Exclusive
+            WlrLayershell.keyboardFocus: (root.mode === "drag" || root.mode === "edge") ? WlrKeyboardFocus.None : WlrKeyboardFocus.Exclusive
             // While a window is being dragged the overlay must not take the pointer.
-            mask: (root.mode === "drag" || root.mode === "edge" || root.mode === "hint") ? noInput : null
+            mask: (root.mode === "drag" || root.mode === "edge") ? noInput : null
 
             Region {
                 id: noInput
@@ -1273,7 +1016,7 @@ Item {
                 // Click outside the card or the assist panel to cancel.
                 MouseArea {
                     anchors.fill: parent
-                    enabled: root.mode !== "drag" && root.mode !== "edge" && root.mode !== "hint"
+                    enabled: root.mode !== "drag" && root.mode !== "edge"
                     onClicked: root.close()
                 }
 
