@@ -45,6 +45,14 @@ Item {
     signal select(int index)
     signal activated(string address)
     signal workspaceChosen(var entry)
+    // The name of a screen was clicked: make it the main one.
+    signal mainChosen(string name)
+
+    // Bumped to play the switch animation when the view moves to another
+    // workspace: the windows slide in from `switchDir` (-1, 0 or 1) and fade in.
+    property int switchTick: 0
+    property int switchDir: 0
+    onSwitchTickChanged: switchAnim.restart()
     // A card was dropped on a workspace of the strips.
     signal moveRequested(string address, int workspaceId)
 
@@ -133,10 +141,22 @@ Item {
                 y: (band.height - height) / 2
 
                 Text {
-                    text: screen.modelData.name
-                    color: Util.withAlpha(Commons.Color.popups.text, screen.main ? 0.75 : 0.6)
+                    id: nameLabel
+                    text: screen.main ? screen.modelData.name + "  ·  " + qsTr("principal")
+                        : (nameArea.containsMouse ? screen.modelData.name + "  ·  " + qsTr("tornar principal") : screen.modelData.name)
+                    color: Util.withAlpha(Commons.Color.popups.text, screen.main || nameArea.containsMouse ? 0.85 : 0.6)
                     font.family: Qt.application.font.family
                     font.pixelSize: Style.font.body - 3
+
+                    MouseArea {
+                        id: nameArea
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        enabled: !screen.main
+                        hoverEnabled: true
+                        cursorShape: screen.main ? Qt.ArrowCursor : Qt.PointingHandCursor
+                        onClicked: layer.mainChosen(screen.modelData.name)
+                    }
                 }
 
                 WorkspaceStrip {
@@ -156,35 +176,47 @@ Item {
         }
     }
 
-    // A workspace with no windows.
-    Text {
-        visible: layer.visible && layer.rects.length === 0
-        anchors.centerIn: parent
-        text: layer.emptyText
-        color: Util.withAlpha(Commons.Color.popups.text, 0.7)
-        font.family: Qt.application.font.family
-        font.pixelSize: Style.font.body + 3
-        opacity: layer.progress
-    }
+    // The windows. This is what slides and fades when the view changes workspace.
+    Item {
+        id: cards
+        anchors.fill: parent
 
-    Repeater {
-        // Nothing is built (and no window captured) while the layer is hidden.
-        model: layer.visible ? layer.rects.length : 0
+        ParallelAnimation {
+            id: switchAnim
+            NumberAnimation { target: cards; property: "x"; from: layer.switchDir * 56; to: 0; duration: 240; easing.type: Easing.OutCubic }
+            NumberAnimation { target: cards; property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutQuad }
+        }
 
-        OverviewCard {
-            required property int index
-            rect: layer.rects[index]
-            client: layer.clients[index] ?? null
-            toplevel: client ? layer.toplevelFor(client.address) : null
-            iconSource: client ? layer.iconFor(client) : ""
-            progress: layer.progress
-            selected: index === layer.selectedIndex
-            dragged: index === layer.dragIndex
-            onHovered: layer.select(index)
-            onActivated: layer.activated(client.address)
-            onDragStarted: function(sx, sy) { layer.updateDrag(index, sx, sy); }
-            onDragMoved: function(sx, sy) { layer.updateDrag(index, sx, sy); }
-            onDropped: function(sx, sy) { layer.finishDrag(index, sx, sy); }
+        // A workspace with no windows.
+        Text {
+            visible: layer.visible && layer.rects.length === 0
+            anchors.centerIn: parent
+            text: layer.emptyText
+            color: Util.withAlpha(Commons.Color.popups.text, 0.7)
+            font.family: Qt.application.font.family
+            font.pixelSize: Style.font.body + 3
+            opacity: layer.progress
+        }
+
+        Repeater {
+            // Nothing is built (and no window captured) while the layer is hidden.
+            model: layer.visible ? layer.rects.length : 0
+
+            OverviewCard {
+                required property int index
+                rect: layer.rects[index]
+                client: layer.clients[index] ?? null
+                toplevel: client ? layer.toplevelFor(client.address) : null
+                iconSource: client ? layer.iconFor(client) : ""
+                progress: layer.progress
+                selected: index === layer.selectedIndex
+                dragged: index === layer.dragIndex
+                onHovered: layer.select(index)
+                onActivated: layer.activated(client.address)
+                onDragStarted: function(sx, sy) { layer.updateDrag(index, sx, sy); }
+                onDragMoved: function(sx, sy) { layer.updateDrag(index, sx, sy); }
+                onDropped: function(sx, sy) { layer.finishDrag(index, sx, sy); }
+            }
         }
     }
 

@@ -109,6 +109,8 @@ Item {
     // The workspace whose windows the overview shows, and the strip of all of them.
     property int overviewWorkspace: 0
     property var workspaceScreens: []
+    property int overviewSwitchTick: 0
+    property int overviewSwitchDir: 0
     // 0 = every window sits where it really is, 1 = settled in the overview.
     property real overviewT: 1
     NumberAnimation {
@@ -159,31 +161,47 @@ Item {
         root.mode = "overview";
     }
 
-    // Lay out the windows of overviewWorkspace (or all of them) and restart the
-    // opening animation. `first` also picks the previously used window.
-    function refreshOverview(first) {
+    // The strips, rebuilt from the latest snapshot.
+    function refreshStrips() {
+        var offered = root.clients.filter(Windows.isSnappable);
+        var byId = Monitors.indexById(root.monitorsIpc);
+        root.workspaceScreens = root.options.overviewScope === "all" ? []
+            : Workspaces.screens(offered, byId, root.overviewWorkspace, root.mainMonitor);
+    }
+
+    // Lay out the windows of overviewWorkspace (or all of them). `first` also
+    // picks the previously used window. Opening animates every window from where
+    // it really is; `slide` (-1, 0 or 1) instead slides the new set in from that
+    // side, which is how a change of workspace looks.
+    function refreshOverview(first, slide) {
         var m = root.monitor;
         var offered = root.clients.filter(Windows.isSnappable);
-        var showAll = root.options.overviewScope === "all";
-        var scoped = showAll ? offered : offered.filter(function(c) {
+        var scoped = root.options.overviewScope === "all" ? offered : offered.filter(function(c) {
             return Windows.belongsToWorkspace(c, root.overviewWorkspace);
         });
         var list = Windows.sortForOverview(scoped);
-        var byId = Monitors.indexById(root.monitorsIpc);
-        root.workspaceScreens = showAll ? [] : Workspaces.screens(offered, byId, root.overviewWorkspace, root.options.mainMonitor);
+        root.refreshStrips();
         root.candidates = list;
         root.overviewIndex = first ? Windows.previousWindowIndex(list) : 0;
         var top = m.reserved[1] + (root.workspaceScreens.length > 0 ? 138 : 50);
         root.overviewRects = root.overviewLayout(list, { x: 70, y: top, w: m.w - 140, h: m.h - top - 70 });
-        root.overviewT = 0;
-        overviewAnim.restart();
+        if (slide === undefined) {
+            root.overviewT = 0;
+            overviewAnim.restart();
+        } else {
+            overviewAnim.stop();
+            root.overviewT = 1;
+            root.overviewSwitchDir = slide;
+            root.overviewSwitchTick++;
+        }
     }
 
     function switchOverviewWorkspace(id) {
         if (id === root.overviewWorkspace)
             return;
+        var dir = Workspaces.direction(root.workspaceScreens, root.overviewWorkspace, id);
         root.overviewWorkspace = id;
-        root.refreshOverview(false);
+        root.refreshOverview(false, dir);
     }
 
     function stepOverviewWorkspace(delta) {
@@ -572,7 +590,7 @@ Item {
                 else if (root.snapshotReason === "overview")
                     root.startOverview();
                 else if (root.snapshotReason === "overview-refresh" && root.mode === "overview")
-                    root.refreshOverview(false);
+                    root.refreshOverview(false, 0);
                 else if (root.snapshotReason === "press" && root.buttonDown) {
                     root.dragStart = Windows.positionsOf(root.clients);
                     dragPoll.start();
@@ -842,6 +860,10 @@ Item {
     property var settingsEntry: null
     // Validated user options from shell.json (see lib/settings.js).
     readonly property var options: Settings.resolve(root.settingsEntry)
+    // The main screen of the overview strip: a choice made in the overview applies
+    // at once, before shell.json has been rewritten.
+    property string mainOverride: ""
+    readonly property string mainMonitor: root.mainOverride !== "" ? root.mainOverride : root.options.mainMonitor
     // Set by setDragToSnap() so the choice applies before shell.json is rewritten.
     property var dragOverride: null
     readonly property var dragSetting: root.dragOverride !== null ? root.dragOverride
@@ -930,6 +952,19 @@ Item {
         root.shell.updateEntryInline(root.pluginId, settings);
     }
 
+    function setMainMonitor(name) {
+        root.mainOverride = name;
+        root.refreshStrips();
+        if (!root.shell || typeof root.shell.updateEntryInline !== "function") {
+            console.warn(root.pluginId + ": can't save the main monitor; it lasts until the shell restarts");
+            return;
+        }
+        var settings = Object.assign({}, root.settingsEntry || {});
+        delete settings.id;
+        settings.mainMonitor = name;
+        root.shell.updateEntryInline(root.pluginId, settings);
+    }
+
     function loadSettings(raw) {
         try {
             var config = JSON.parse(raw);
@@ -941,6 +976,8 @@ Item {
             root.settingsEntry = entry;
             if (entry && entry.dragToSnap === root.dragOverride)
                 root.dragOverride = null;
+            if (entry && entry.mainMonitor === root.mainOverride)
+                root.mainOverride = "";
         } catch (e) {
             console.warn(root.pluginId + ": could not read shell.json: " + e);
         }
@@ -1197,6 +1234,9 @@ Item {
                     iconFor: root.iconFor
                     screens: root.workspaceScreens
                     previewFor: root.previewDrop
+                    switchTick: root.overviewSwitchTick
+                    switchDir: root.overviewSwitchDir
+                    onMainChosen: function(name) { root.setMainMonitor(name); }
                     workspaceId: root.overviewWorkspace
                     emptyText: qsTr("Nenhuma janela neste workspace")
                     onSelect: function(index) { root.overviewIndex = index; }

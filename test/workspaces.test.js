@@ -114,31 +114,45 @@ test("the monitor owning a workspace is the one showing its block", () => {
     assert.equal(W.monitorFor(25, showing), null);
 });
 
-test("screens: the first block is the main one, whichever screen is being looked at", () => {
+test("screens: an external monitor is the main one unless chosen otherwise, whichever screen is looked at", () => {
     const fromLaptop = W.screens([], showing, 1, "");
     const fromOther = W.screens([], showing, 11, "");
-    assert.deepEqual(fromLaptop.map((s) => s.name), ["eDP-1", "DP-3"]);
-    assert.deepEqual(fromOther.map((s) => s.name), ["eDP-1", "DP-3"]);
+    assert.deepEqual(fromLaptop.map((s) => s.name), ["DP-3", "eDP-1"]);
+    assert.deepEqual(fromOther.map((s) => s.name), ["DP-3", "eDP-1"]);
     assert.deepEqual(fromOther.map((s) => s.main), [true, false]);
 });
 
-test("screens: a named main monitor goes first", () => {
-    assert.deepEqual(W.screens([], showing, 1, "DP-3").map((s) => s.name), ["DP-3", "eDP-1"]);
-    assert.deepEqual(W.screens([], showing, 1, "nope").map((s) => s.name), ["eDP-1", "DP-3"]);
+test("screens: a named main monitor goes first, an unknown name is ignored", () => {
+    assert.deepEqual(W.screens([], showing, 1, "eDP-1").map((s) => s.name), ["eDP-1", "DP-3"]);
+    assert.deepEqual(W.screens([], showing, 1, "nope").map((s) => s.name), ["DP-3", "eDP-1"]);
+});
+
+test("screens: without internal panels the first block is main", () => {
+    const two = { 0: { id: 0, name: "DP-1", workspaceId: 1, x: 0, y: 0, w: 1920, h: 1080 }, 1: { id: 1, name: "HDMI-A-1", workspaceId: 11, x: 1920, y: 0, w: 1920, h: 1080 } };
+    assert.deepEqual(W.screens([], two, 11, "").map((s) => s.name), ["DP-1", "HDMI-A-1"]);
+});
+
+test("direction follows the strips, main first", () => {
+    const strips = W.screens([], showing, 1, "");      // DP-3 (11-15) then eDP-1 (1-5)
+    assert.equal(W.direction(strips, 11, 12), 1);
+    assert.equal(W.direction(strips, 12, 11), -1);
+    assert.equal(W.direction(strips, 15, 1), 1);
+    assert.equal(W.direction(strips, 3, 3), 0);
+    assert.equal(W.direction(strips, 3, 99), 0);
 });
 
 test("each screen's strip is its own block, with its windows", () => {
     const [main, other] = W.screens([win(11, 1, [4, 30], [762, 830])], showing, 1, "");
-    assert.deepEqual(main.entries.map((e) => e.id), [1, 2, 3, 4, 5]);
-    assert.deepEqual(other.entries.map((e) => e.id), [11, 12, 13, 14, 15]);
-    assert.equal(other.entries[0].count, 1);
-    assert.equal(main.workspaceId, 1);
-    assert.ok(Math.abs(other.aspect - 1536 / 864) < 1e-9);
+    assert.deepEqual(main.entries.map((e) => e.id), [11, 12, 13, 14, 15]);
+    assert.deepEqual(other.entries.map((e) => e.id), [1, 2, 3, 4, 5]);
+    assert.equal(main.entries[0].count, 1);
+    assert.equal(main.workspaceId, 11);
+    assert.ok(Math.abs(main.aspect - 1536 / 864) < 1e-9);
 });
 
 test("a viewed workspace past the fifth is shown even when empty", () => {
-    const [, other] = W.screens([], showing, 17, "");
-    assert.deepEqual(other.entries.map((e) => e.id), [11, 12, 13, 14, 15, 17]);
+    const [main] = W.screens([], showing, 17, "");
+    assert.deepEqual(main.entries.map((e) => e.id), [11, 12, 13, 14, 15, 17]);
 });
 
 test("a single monitor gives a single strip", () => {
@@ -147,8 +161,8 @@ test("a single monitor gives a single strip", () => {
 
 test("entriesFor finds the strip holding a workspace", () => {
     const strips = W.screens([], showing, 1, "");
-    assert.deepEqual(W.entriesFor(strips, 13).map((e) => e.id), [11, 12, 13, 14, 15]);
-    assert.deepEqual(W.entriesFor(strips, 99).map((e) => e.id), [1, 2, 3, 4, 5]);
+    assert.deepEqual(W.entriesFor(strips, 3).map((e) => e.id), [1, 2, 3, 4, 5]);
+    assert.deepEqual(W.entriesFor(strips, 99).map((e) => e.id), [11, 12, 13, 14, 15]);
     assert.deepEqual(W.entriesFor([], 1), []);
 });
 

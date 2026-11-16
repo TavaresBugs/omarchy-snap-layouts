@@ -41,7 +41,7 @@ components/          views              lib/        decisions (pure JS)
 
 ## Workspaces
 
-Omarchy gives each monitor a block of ten workspaces (monitor 1: 1-10, monitor 2: 11-20) and the bar labels them by position. `lib/workspaces.js` applies the same rule: `buildStrip` returns the first five of the current monitor's block (plus later ones that hold windows), each with its windows as fractions of their monitor, and `stepWorkspace` moves between them. `refreshOverview` re-lays-out the windows of whichever workspace the strip has selected. `screens` builds one strip per monitor in a fixed order (main first), and `dropPreview` works out what a drop would look like.
+Omarchy gives each monitor a block of ten workspaces (monitor 1: 1-10, monitor 2: 11-20) and the bar labels them by position. `lib/workspaces.js` applies the same rule: `buildStrip` returns the first five of the current monitor's block (plus later ones that hold windows), each with its windows as fractions of their monitor, and `stepWorkspace` moves between them. `refreshOverview` re-lays-out the windows of whichever workspace the strip has selected. `screens` builds one strip per monitor in a fixed order (main first: the chosen one, else an external monitor), `direction` says which way a workspace change goes (the overview slides its windows in from that side), and `dropPreview` works out what a drop would look like.
 
 ## Moving a window between workspaces
 
