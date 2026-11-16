@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
+import "Util.js" as Util
 
 // The window overview (Alt+Tab view): a clean backdrop with every window as a
 // thumbnail. The backdrop starts below the bar, so the bar stays visible.
@@ -27,12 +28,19 @@ Item {
     property url wallpaper: ""
     property real dim: 0.55
 
+    // Workspace strip (hidden when `workspaces` is empty).
+    property var workspaces: []
+    property int workspaceId: 0
+    property real monitorAspect: 16 / 9
+    property string emptyText: ""
+
     // Lookups the plugin provides, so this file needs no knowledge of Hyprland.
     property var toplevelFor: function(address) { return null; }
     property var iconFor: function(client) { return ""; }
 
     signal select(int index)
     signal activated(string address)
+    signal workspaceChosen(var entry)
 
     // Wallpaper, dimmed: hides the real windows behind the thumbnails.
     Item {
@@ -58,6 +66,30 @@ Item {
             color: "black"
             opacity: layer.dim
         }
+    }
+
+    WorkspaceStrip {
+        visible: layer.workspaces.length > 0
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: layer.topInset + 14
+        width: implicitWidth
+        entries: layer.workspaces
+        selectedId: layer.workspaceId
+        aspect: layer.monitorAspect
+        opacity: layer.progress
+        z: 20
+        onChosen: function(entry) { layer.workspaceChosen(entry); }
+    }
+
+    // A workspace with no windows.
+    Text {
+        visible: layer.visible && layer.rects.length === 0
+        anchors.centerIn: parent
+        text: layer.emptyText
+        color: Util.withAlpha(Commons.Color.popups.text, 0.7)
+        font.family: Qt.application.font.family
+        font.pixelSize: Style.font.body + 3
+        opacity: layer.progress
     }
 
     Repeater {

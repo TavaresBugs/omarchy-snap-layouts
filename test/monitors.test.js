@@ -47,3 +47,12 @@ test("byId() matches Hyprland's numeric id, as number or string", () => {
     assert.equal(M.byId(list, "0").name, "DP-3");
     assert.equal(M.byId(list, 7), null);
 });
+
+test("converted monitors keep their id, and indexById keys by it", () => {
+    const list = [ipc({ id: 0 }), ipc({ id: 1, name: "eDP-1", x: 1536 })];
+    assert.equal(M.fromIpc(list[1]).id, 1);
+    const index = M.indexById(list);
+    assert.equal(index[0].name, "DP-3");
+    assert.equal(index[1].x, 1536);
+    assert.deepEqual(Object.keys(M.indexById([])), []);
+});

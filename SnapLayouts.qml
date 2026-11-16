@@ -14,6 +14,7 @@ import "lib/monitors.js" as Monitors
 import "lib/windows.js" as Windows
 import "lib/overview.js" as Overview
 import "lib/settings.js" as Settings
+import "lib/workspaces.js" as Workspaces
 
 // Windows 11-style snap layouts for Hyprland windows, plus an Alt+Tab style overview.
 //
@@ -104,6 +105,9 @@ Item {
     // Window overview (Alt+Tab): every open window, pick one to bring forward.
     property int overviewIndex: 0
     property var overviewRects: []
+    // The workspace whose windows the overview shows, and the strip of all of them.
+    property int overviewWorkspace: 0
+    property var workspaceStrip: []
     // 0 = every window sits where it really is, 1 = settled in the overview.
     property real overviewT: 1
     NumberAnimation {
@@ -143,26 +147,56 @@ Item {
         var m = root.activeIpc ? root.monitorById(root.activeIpc.monitor) : null;
         if (!m && root.monitors.length > 0)
             m = root.monitors[0];
-        if (!m)
+        if (!m || root.clients.filter(Windows.isSnappable).length === 0)
             return;
-        var offered = root.clients.filter(Windows.isSnappable);
-        // Only this workspace's windows by default; mixing every workspace is confusing.
-        var scoped = root.options.overviewScope === "all" ? offered
-            : offered.filter(function(c) { return Windows.belongsToWorkspace(c, m.workspaceId); });
-        var list = Windows.sortForOverview(scoped.length > 0 ? scoped : offered);
-        if (list.length === 0)
-            return;
-        var top = m.reserved[1] + 50;
         root.monitor = m;
         root.targetAddress = "";
         root.placedAddresses = [];
-        root.candidates = list;
-        root.overviewIndex = Windows.previousWindowIndex(list);
         root.assistPage = 0;
-        root.overviewRects = root.overviewLayout(list, { x: 70, y: top, w: m.w - 140, h: m.h - top - 120 });
-        root.overviewT = 0;
+        root.overviewWorkspace = m.workspaceId;
+        root.refreshOverview(true);
         root.mode = "overview";
+    }
+
+    // Lay out the windows of overviewWorkspace (or all of them) and restart the
+    // opening animation. `first` also picks the previously used window.
+    function refreshOverview(first) {
+        var m = root.monitor;
+        var offered = root.clients.filter(Windows.isSnappable);
+        var showAll = root.options.overviewScope === "all";
+        var scoped = showAll ? offered : offered.filter(function(c) {
+            return Windows.belongsToWorkspace(c, root.overviewWorkspace);
+        });
+        var list = Windows.sortForOverview(scoped);
+        root.workspaceStrip = showAll ? [] : Workspaces.buildStrip(offered, Monitors.indexById(root.monitorsIpc), root.overviewWorkspace);
+        root.candidates = list;
+        root.overviewIndex = first ? Windows.previousWindowIndex(list) : 0;
+        var top = m.reserved[1] + (root.workspaceStrip.length > 0 ? 104 : 50);
+        root.overviewRects = root.overviewLayout(list, { x: 70, y: top, w: m.w - 140, h: m.h - top - 70 });
+        root.overviewT = 0;
         overviewAnim.restart();
+    }
+
+    function switchOverviewWorkspace(id) {
+        if (id === root.overviewWorkspace)
+            return;
+        root.overviewWorkspace = id;
+        root.refreshOverview(false);
+    }
+
+    function stepOverviewWorkspace(delta) {
+        root.switchOverviewWorkspace(Workspaces.stepWorkspace(root.workspaceStrip, root.overviewWorkspace, delta));
+    }
+
+    // A click on a strip thumbnail: look at that workspace, or, for the empty
+    // slot, go there.
+    function chooseWorkspaceEntry(entry) {
+        if (!entry.isNew) {
+            root.switchOverviewWorkspace(entry.id);
+            return;
+        }
+        Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.focus({ workspace = '" + entry.id + "' })"]);
+        root.close();
     }
 
 
@@ -1021,7 +1055,12 @@ Item {
                 Keys.onEscapePressed: root.close()
                 Keys.onPressed: function(event) {
                     if (root.mode === "overview") {
-                        if (event.key === Qt.Key_Tab) {
+                        if ((event.modifiers & Qt.ControlModifier)
+                                && (event.key === Qt.Key_Left || event.key === Qt.Key_Right)) {
+                            root.stepOverviewWorkspace(event.key === Qt.Key_Right ? 1 : -1);
+                        } else if (event.key === Qt.Key_PageDown || event.key === Qt.Key_PageUp) {
+                            root.stepOverviewWorkspace(event.key === Qt.Key_PageDown ? 1 : -1);
+                        } else if (event.key === Qt.Key_Tab) {
                             root.overviewMove(1);
                         } else if (event.key === Qt.Key_Backtab) {
                             root.overviewMove(-1);
@@ -1091,8 +1130,13 @@ Item {
                     wallpaper: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/current/background"
                     toplevelFor: root.toplevelFor
                     iconFor: root.iconFor
+                    workspaces: root.workspaceStrip
+                    workspaceId: root.overviewWorkspace
+                    monitorAspect: root.monitor ? root.monitor.w / root.monitor.h : 16 / 9
+                    emptyText: qsTr("Nenhuma janela neste workspace")
                     onSelect: function(index) { root.overviewIndex = index; }
                     onActivated: function(address) { root.focusWindow(address); }
+                    onWorkspaceChosen: function(entry) { root.chooseWorkspaceEntry(entry); }
                 }
 
                 LayoutPicker {
