@@ -13,6 +13,11 @@ Added
 - Snap assist now uses the same thumbnails and row layout as the overview, in a quiet neutral frame, with paging. Number keys still pick a window, but no numbers are drawn.
 - Optional Hyprland extras: key bindings and a floating-window limiter.
 
+- The overview follows workspace changes made elsewhere (Super+1..5).
+- The workspace strip is reachable with the arrow keys (Up from the top row, Down to return); Shift+Left/Right on it, or dragging a thumbnail onto another, swaps two workspaces' numbers; Enter or a double-click goes to one.
+- The overview closes by running the windows back to their places; the wallpaper is decoded before the first frame, so it no longer pops in during the opening.
+- Key handling for the overview moved to `lib/navigation.js` and is tested.
+
 Fixed
 - The overview backdrop follows the system's look: it reaches the screen edges (so the focused window's border can't show around it) and has the window corner curve, one gap further out. The bar strip is dimmed like the rest of the screen.
 - Overview cards and workspace thumbnails share one frame (`ThumbFrame`): the same shadow, rounded clipping and a ring drawn above the content, so a picture can no longer spill over the outline. Workspace numbers are plain text instead of a badge.

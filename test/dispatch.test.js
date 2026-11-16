@@ -33,3 +33,25 @@ test("a window can be tiled on arrival", () => {
     const lua = D.moveToWorkspace("0xabc", 4, "eDP-1", true);
     assert.ok(lua.indexOf("float") > lua.indexOf("window.move"));
 });
+
+test("swapping two workspaces goes through a free number", () => {
+    const lua = D.swapWorkspaces(1, 2);
+    assert.match(lua, /change_id\(\{ workspace = '1', id = 100001 \}\)/);
+    assert.match(lua, /workspace = '2', id = 1 /);
+    assert.match(lua, /workspace = '100001', id = 2 /);
+    assert.match(lua, /elseif a then/);
+});
+
+test("swapping needs two different positive whole numbers", () => {
+    assert.equal(D.swapWorkspaces(1, 1), "");
+    assert.equal(D.swapWorkspaces(0, 2), "");
+    assert.equal(D.swapWorkspaces(1.5, 2), "");
+    assert.equal(D.swapWorkspaces("1); os.execute('x", 2), "");
+});
+
+test("going to a workspace uses Omarchy's slot on the owner monitor, or plain focus", () => {
+    assert.match(D.goToWorkspace(13, 3, "DP-3"), /o\.workspaces\.focus\(3, 'DP-3'\)/);
+    assert.equal(D.goToWorkspace(13, 3, ""), "hl.dispatch(hl.dsp.focus({ workspace = '13' }))");
+    assert.equal(D.goToWorkspace(0, 3, "DP-3"), "");
+    assert.equal(D.goToWorkspace(13, 3, "x'); evil('"), "hl.dispatch(hl.dsp.focus({ workspace = '13' }))");
+});

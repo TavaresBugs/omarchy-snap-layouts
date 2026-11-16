@@ -24,13 +24,26 @@ Item {
     // and the picture of the window being dropped, shown in its slot.
     property var drop: null
     property var dropToplevel: null
+    // The keyboard is on the strip: the viewed workspace stands out a little more.
+    property bool focused: false
 
-    signal chosen(var entry)
+    signal chosen(var entry)           // click: look at this workspace
+    signal activated(var entry)        // double click: go to it
+    signal reorderRequested(int from, int to)    // a thumbnail was dragged onto another
+
+    // Reordering: the thumbnail being dragged, how far, and the one under it.
+    property int dragId: -1
+    property real dragDx: 0
+    property real dragDy: 0
+    property int overId: -1
 
     // The workspace under a point given in this strip's coordinates, or -1.
-    function idAt(px, py) {
+    // `skipId` leaves one thumbnail out (the one being dragged).
+    function idAt(px, py, skipId) {
         for (var i = 0; i < repeater.count; i++) {
             var thumb = repeater.itemAt(i);
+            if (thumb.modelData.id === skipId)
+                continue;
             var p = thumb.mapFromItem(strip, px, py);
             if (p.x >= 0 && p.y >= 0 && p.x <= thumb.width && p.y <= thumb.height)
                 return thumb.modelData.id;
@@ -57,6 +70,8 @@ Item {
                 readonly property bool empty: modelData.count === 0
                 readonly property bool target: modelData.id === strip.dropId
                 readonly property bool previewing: target && strip.drop !== null
+                readonly property bool dragging: strip.dragId === modelData.id
+                readonly property bool over: strip.overId === modelData.id
 
                 // Where a window sits: after the drop, if this is the target.
                 function frameOf(w) {
@@ -69,15 +84,20 @@ Item {
 
                 width: Math.round(strip.thumbHeight * strip.aspect)
                 height: strip.thumbHeight
-                scale: selected || target || mouse.containsMouse ? 1.05 : 1
-                opacity: selected || target || mouse.containsMouse ? 1 : (empty ? 0.55 : 0.88)
+                scale: (selected && strip.focused) ? 1.1 : (selected || target || over || dragging || mouse.containsMouse ? 1.05 : 1)
+                opacity: dragging ? 0.9 : (selected || target || over || mouse.containsMouse ? 1 : (empty ? 0.55 : 0.88))
+                z: dragging ? 50 : 0
+                transform: Translate {
+                    x: thumb.dragging ? strip.dragDx : 0
+                    y: thumb.dragging ? strip.dragDy : 0
+                }
                 Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                 Behavior on opacity { NumberAnimation { duration: 120 } }
 
                 ThumbFrame {
                     anchors.fill: parent
                     radius: 8
-                    emphasized: thumb.selected || thumb.target
+                    emphasized: thumb.selected || thumb.target || thumb.over
                     fill: Util.withAlpha(Commons.Color.popups.background, 0.82)
 
                     // The windows, at their real positions, with their live picture.
@@ -158,8 +178,51 @@ Item {
                     id: mouse
                     anchors.fill: parent
                     hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: strip.chosen(thumb.modelData)
+                    cursorShape: thumb.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+
+                    // A press that travels further than this is a drag, not a click.
+                    readonly property int threshold: 8
+                    property point pressAt
+                    property bool moved: false
+
+                    onPressed: function(m) {
+                        pressAt = mapToItem(strip, m.x, m.y);
+                        moved = false;
+                    }
+                    onPositionChanged: function(m) {
+                        if (!pressed)
+                            return;
+                        var p = mapToItem(strip, m.x, m.y);
+                        if (!moved && Math.hypot(p.x - pressAt.x, p.y - pressAt.y) > threshold) {
+                            moved = true;
+                            strip.dragId = thumb.modelData.id;
+                        }
+                        if (moved) {
+                            strip.dragDx = p.x - pressAt.x;
+                            strip.dragDy = p.y - pressAt.y;
+                            strip.overId = strip.idAt(p.x, p.y, thumb.modelData.id);
+                        }
+                    }
+                    onReleased: {
+                        if (!moved)
+                            return;
+                        var from = thumb.modelData.id;
+                        var to = strip.overId;
+                        strip.dragId = -1;
+                        strip.overId = -1;
+                        strip.dragDx = 0;
+                        strip.dragDy = 0;
+                        if (to > 0)
+                            strip.reorderRequested(from, to);
+                    }
+                    onClicked: {
+                        if (!moved)
+                            strip.chosen(thumb.modelData);
+                    }
+                    onDoubleClicked: {
+                        if (!moved)
+                            strip.activated(thumb.modelData);
+                    }
                 }
             }
         }

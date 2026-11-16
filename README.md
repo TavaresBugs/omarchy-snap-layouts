@@ -87,17 +87,31 @@ o.bind("ALT + TAB", "Window overview", hl.dsp.event("io.github.n0rthstar88.snap-
 | Key | Action |
 |---|---|
 | Arrow keys | Select the nearest window in that direction |
+| Up from the top row | Move to the workspace strip |
 | Tab / Shift+Tab | Next / previous window |
 | Enter or click | Bring the window to the front |
 | Ctrl+Left / Ctrl+Right, PageUp / PageDown | Look at the previous / next workspace |
-| 1 to 6 | Pick a window by number |
+| 1 to 9 | Pick a window by its place in the list |
 | Esc or click outside | Close |
+
+On the workspace strip:
+
+| Key | Action |
+|---|---|
+| Left / Right | Look at the previous / next workspace (across screens, main first) |
+| Shift+Left / Shift+Right | Move the workspace one place: it trades numbers with its neighbour |
+| Enter | Go to the workspace |
+| Down | Back to the windows |
+
+The overview also follows the system: pressing Super+1..5 (or any other way of changing workspace) while it is open moves its view to that workspace.
 
 It shows the windows of the current workspace, plus the ones minimized from it; set `overviewScope` to `"all"` to list every workspace.
 
 **Workspace strip.** At the top, one thumbnail per workspace of the monitor you are on, following Omarchy's per-monitor blocks of ten (the first five always, the others when they hold windows or are current), labelled like the bar. Each thumbnail shows its windows live, at their real positions; empty workspaces are dimmed. Click one, or press Ctrl+Left/Right or PageUp/PageDown, to look at that workspace's windows. Thumbnails are arranged in rows of equal height: one window, two side by side, three as 2+1, four as 2+2, and so on.
 
-**Moving windows.** Drag a thumbnail onto any workspace in the strip to send the window there without leaving the overview. While you drag, the workspace under the pointer previews the result: the window's slot appears in the thumbnail, with the window it will split (50/50, along the longer side) shrinking to make room. A floating window dropped next to tiled ones is tiled on arrival. With more than one monitor there is one strip per screen: the main screen is big and the others small, always in the same order whichever screen you open the overview on. The main screen is an external monitor if there is one (the laptop panel otherwise, then the first workspace block). Click the name of another screen to make it the main one; the choice is saved as `mainMonitor` in `shell.json`, where you can also set it by hand (a connector name such as `"DP-3"`). Changing workspace slides the windows in from the side the new workspace lies on. A window can be dropped onto a workspace of any screen (an empty workspace is created on that screen). Clicking a thumbnail in any strip shows that workspace's windows.
+**Reordering workspaces.** Drag a thumbnail onto another one on the same screen, or press Shift+Left/Right on the strip, and the two trade numbers, each keeping its windows (so "2 comes to 1 and 1 goes to 2"). Double-click a thumbnail, or press Enter on it, to go to that workspace.
+
+**Moving windows.** Drag a thumbnail onto any workspace in the strip to send the window there without leaving the overview. While you drag, the workspace under the pointer previews the result: the window's slot appears in the thumbnail, with the window it will split (50/50, along the longer side) shrinking to make room. A floating window dropped next to tiled ones is tiled on arrival. With more than one monitor there is one strip per screen: the main screen is big and the others small, always in the same order whichever screen you open the overview on. The main screen is an external monitor if there is one (the laptop panel otherwise, then the first workspace block). Click the name of another screen to make it the main one; the choice is saved as `mainMonitor` in `shell.json`, where you can also set it by hand (a connector name such as `"DP-3"`). Changing workspace slides the windows in from the side the new workspace lies on. Opening runs the real windows into the thumbnails and closing runs them back, so the window you pick lands on itself. A window can be dropped onto a workspace of any screen (an empty workspace is created on that screen). Clicking a thumbnail in any strip shows that workspace's windows.
 
 A tiled window can never be drawn above floating ones in Hyprland. When you pick a tiled window that floating windows cover, those floating windows join the tiling layout, so everything stays visible and resizable. Pinned and fullscreen windows are left alone.
 

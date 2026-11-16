@@ -31,7 +31,9 @@ Item {
             anchors.fill: parent
             source: backdrop.wallpaper
             fillMode: Image.PreserveAspectCrop
-            asynchronous: true
+            // Decoded before the first frame (cached afterwards), so the wallpaper
+            // can't pop in halfway through an animation.
+            asynchronous: false
             cache: true
         }
 

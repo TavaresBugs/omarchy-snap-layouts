@@ -23,7 +23,9 @@ Item {
     property var rects: []
     property var clients: []
     property int selectedIndex: 0
-    property real progress: 1           // 0..1, the opening animation
+    property real progress: 1           // 0..1, the opening (and closing) animation
+    property bool morph: true           // false: the windows fade instead of travelling
+    property bool stripFocused: false   // the keyboard is on the workspace strip
     property int topInset: 0            // height of the bar to leave uncovered
     property url wallpaper: ""
     property real dim: 0.55
@@ -47,6 +49,8 @@ Item {
     signal select(int index)
     signal activated(string address)
     signal workspaceChosen(var entry)
+    signal workspaceActivated(var entry)
+    signal workspaceReorder(int from, int to)
     // The name of a screen was clicked: make it the main one.
     signal mainChosen(string name)
 
@@ -102,7 +106,9 @@ Item {
         y: layer.topInset
         width: layer.width
         height: layer.height - layer.topInset
-        opacity: layer.progress
+        // Quick: while the cards are still leaving their windows, the real ones
+        // are already hidden behind the wallpaper, so they aren't seen twice.
+        opacity: Math.min(1, layer.progress * 3)
         base: Commons.Color.background
         wallpaper: layer.wallpaper
         dim: layer.dim
@@ -115,7 +121,7 @@ Item {
         width: layer.width
         height: layer.topInset
         color: "black"
-        opacity: layer.dim * layer.progress
+        opacity: layer.dim * Math.min(1, layer.progress * 3)
     }
 
     // The strips: the main screen big, the others small, always in the same order.
@@ -165,12 +171,15 @@ Item {
                     selectedId: layer.workspaceId
                     aspect: screen.modelData.aspect
                     thumbHeight: screen.main ? (layer.screens.length > 1 ? 68 : 76) : 40
+                    focused: layer.stripFocused
                     dropId: layer.dropId
                     drop: layer.dropInfo
                     dropToplevel: layer.dragIndex >= 0 && layer.clients[layer.dragIndex]
                         ? layer.toplevelFor(layer.clients[layer.dragIndex].address) : null
                     toplevelFor: layer.toplevelFor
                     onChosen: function(entry) { layer.workspaceChosen(entry); }
+                    onActivated: function(entry) { layer.workspaceActivated(entry); }
+                    onReorderRequested: function(from, to) { layer.workspaceReorder(from, to); }
                 }
             }
         }
@@ -209,6 +218,7 @@ Item {
                 toplevel: client ? layer.toplevelFor(client.address) : null
                 iconSource: client ? layer.iconFor(client) : ""
                 progress: layer.progress
+                morph: layer.morph
                 selected: index === layer.selectedIndex
                 dragged: index === layer.dragIndex
                 onHovered: layer.select(index)

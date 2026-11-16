@@ -11,6 +11,7 @@ import "components"
 import "lib/layouts.js" as Layouts
 import "lib/edge.js" as Edge
 import "lib/monitors.js" as Monitors
+import "lib/navigation.js" as Navigation
 import "lib/dispatch.js" as Dispatch
 import "lib/windows.js" as Windows
 import "lib/overview.js" as Overview
@@ -108,6 +109,17 @@ Item {
     // The workspace whose windows the overview shows, and the strip of all of them.
     property int overviewWorkspace: 0
     property var workspaceScreens: []
+    // The keyboard is on the workspace strip rather than on the windows.
+    property bool stripFocus: false
+    // The overview is playing its closing animation.
+    property bool closing: false
+    // The overview shows the workspace the monitor is showing, so its windows
+    // can travel to and from their real places; otherwise they fade.
+    readonly property bool overviewMorph: root.monitor ? root.overviewWorkspace === root.monitor.workspaceId : true
+    // Workspace events caused by the plugin itself (moving, swapping) are not a
+    // reason to change what the overview shows.
+    property double ignoreWorkspaceUntil: 0
+    property int followTarget: 0
     property int overviewSwitchTick: 0
     property int overviewSwitchDir: 0
     // 0 = every window sits where it really is, 1 = settled in the overview.
@@ -118,8 +130,19 @@ Item {
         property: "overviewT"
         from: 0
         to: 1
-        duration: 260
+        duration: 300
         easing.type: Easing.OutCubic
+    }
+    // Closing runs the opening backwards: the windows travel back to their
+    // places, and only then does the overview go away.
+    NumberAnimation {
+        id: closeAnim
+        target: root
+        property: "overviewT"
+        to: 0
+        duration: 220
+        easing.type: Easing.InOutCubic
+        onFinished: root.hide()
     }
 
     // Thumbnails in rows of equal height; the maths is in lib/overview.js.
@@ -155,9 +178,19 @@ Item {
         root.targetAddress = "";
         root.placedAddresses = [];
         root.assistPage = 0;
+        root.closing = false;
+        root.stripFocus = false;
         root.overviewWorkspace = m.workspaceId;
         root.refreshOverview(true);
         root.mode = "overview";
+    }
+
+    // The snapshot changed what a monitor shows: take the monitor again, then lay out.
+    function refreshAfterChange(slide) {
+        var fresh = root.monitor ? root.monitorById(root.monitor.id) : null;
+        if (fresh)
+            root.monitor = fresh;
+        root.refreshOverview(false, slide);
     }
 
     // The strips, rebuilt from the latest snapshot.
@@ -204,12 +237,104 @@ Item {
     }
 
     function stepOverviewWorkspace(delta) {
-        root.switchOverviewWorkspace(Workspaces.stepWorkspace(Workspaces.entriesFor(root.workspaceScreens, root.overviewWorkspace), root.overviewWorkspace, delta));
+        root.switchOverviewWorkspace(Workspaces.stepWorkspace(Workspaces.flatten(root.workspaceScreens), root.overviewWorkspace, delta));
     }
 
     // A click on a strip thumbnail: look at that workspace's windows.
     function chooseWorkspaceEntry(entry) {
         root.switchOverviewWorkspace(entry.id);
+    }
+
+    // ---- Following and changing workspaces ----
+
+    // Super+1..5 (or any other workspace change) while the overview is open:
+    // look at the workspace the system moved to, so the two never disagree.
+    function followWorkspace(id) {
+        if (!(id > 0) || id === root.overviewWorkspace)
+            return;
+        root.followTarget = id;
+        root.requestSnapshot("overview-follow");
+    }
+
+    // The workspace strip's own numbers can be changed from here too.
+    function swapWorkspaces(a, b) {
+        if (Workspaces.blockOf(a) !== Workspaces.blockOf(b))
+            return;
+        var lua = Dispatch.swapWorkspaces(a, b);
+        if (lua === "")
+            return;
+        root.ignoreWorkspaceUntil = Date.now() + 900;
+        Quickshell.execDetached(["hyprctl", "eval", lua]);
+        // The overview keeps looking at the same windows, which now sit under the other number.
+        if (root.overviewWorkspace === a)
+            root.overviewWorkspace = b;
+        else if (root.overviewWorkspace === b)
+            root.overviewWorkspace = a;
+        refreshTimer.restart();
+    }
+
+    function swapOverviewWorkspace(delta) {
+        var to = Workspaces.neighborIn(Workspaces.entriesFor(root.workspaceScreens, root.overviewWorkspace), root.overviewWorkspace, delta);
+        if (to > 0)
+            root.swapWorkspaces(root.overviewWorkspace, to);
+    }
+
+    // Leave the overview and go to a workspace, on the monitor that owns it.
+    function goToWorkspace(id) {
+        if (root.closing)
+            return;
+        var owner = Workspaces.monitorFor(id, Monitors.indexById(root.monitorsIpc));
+        var lua = Dispatch.goToWorkspace(id, Workspaces.slotOf(id), owner ? owner.name : "");
+        if (lua !== "")
+            Quickshell.execDetached(["hyprctl", "eval", lua]);
+        root.close();
+    }
+
+    // A key in the overview. What each key means is decided in lib/navigation.js.
+    function overviewKey(event) {
+        var names = {};
+        names[Qt.Key_Up] = "up";
+        names[Qt.Key_Down] = "down";
+        names[Qt.Key_Left] = "left";
+        names[Qt.Key_Right] = "right";
+        names[Qt.Key_Tab] = "tab";
+        names[Qt.Key_Backtab] = "backtab";
+        names[Qt.Key_PageUp] = "pageup";
+        names[Qt.Key_PageDown] = "pagedown";
+        names[Qt.Key_Return] = "enter";
+        names[Qt.Key_Enter] = "enter";
+        var key = names[event.key];
+        if (key === undefined) {
+            // 1-9 pick a window by its place in the list.
+            if (event.key >= Qt.Key_1 && event.key <= Qt.Key_9 && !root.stripFocus) {
+                var jump = event.key - Qt.Key_1;
+                if (jump < root.candidates.length)
+                    root.focusWindow(root.candidates[jump].address);
+                return true;
+            }
+            return false;
+        }
+        var result = Navigation.overviewKey({
+            strip: root.stripFocus,
+            hasStrip: root.workspaceScreens.length > 0,
+            index: root.overviewIndex,
+            rects: root.overviewRects,
+            count: root.candidates.length
+        }, {
+            key: key,
+            ctrl: !!(event.modifiers & Qt.ControlModifier),
+            shift: !!(event.modifiers & Qt.ShiftModifier)
+        });
+        switch (result.action) {
+        case "select": root.overviewIndex = result.index; break;
+        case "enterStrip": root.stripFocus = true; break;
+        case "leaveStrip": root.stripFocus = false; break;
+        case "stepWorkspace": root.stepOverviewWorkspace(result.delta); break;
+        case "swapWorkspace": root.swapOverviewWorkspace(result.delta); break;
+        case "activate": root.focusWindow(root.candidates[root.overviewIndex].address); break;
+        case "activateWorkspace": root.goToWorkspace(root.overviewWorkspace); break;
+        }
+        return true;
     }
 
     // What dropping a window onto a workspace would look like, for the strips.
@@ -233,6 +358,7 @@ Item {
         var lua = Dispatch.moveToWorkspace(address, workspaceId, owner ? owner.name : "", preview ? preview.tile : false);
         if (lua === "")
             return;
+        root.ignoreWorkspaceUntil = Date.now() + 900;
         Quickshell.execDetached(["hyprctl", "eval", lua]);
         refreshTimer.restart();
     }
@@ -247,6 +373,8 @@ Item {
     // Bring a window to the front: restore it if minimized, switch to its
     // workspace, focus it, and raise it above any floating windows on top.
     function focusWindow(address) {
+        if (root.closing)
+            return;
         var c = root.clientByAddress(address);
         var sel = "address:" + address;
         var lua = [];
@@ -476,6 +604,21 @@ Item {
     function close() {
         if (root.mode === "")
             return;
+        if (root.mode === "overview") {
+            if (root.closing)
+                return;
+            root.closing = true;
+            overviewAnim.stop();
+            closeAnim.restart();
+            return;
+        }
+        root.hide();
+    }
+
+    function hide() {
+        closeAnim.stop();
+        root.closing = false;
+        root.stripFocus = false;
         root.mode = "";
         root.assistPage = 0;
         root.edgePending = "";
@@ -590,7 +733,12 @@ Item {
                 else if (root.snapshotReason === "overview")
                     root.startOverview();
                 else if (root.snapshotReason === "overview-refresh" && root.mode === "overview")
-                    root.refreshOverview(false, 0);
+                    root.refreshAfterChange(0);
+                else if (root.snapshotReason === "overview-follow" && root.mode === "overview" && !root.closing) {
+                    var dir = Workspaces.direction(root.workspaceScreens, root.overviewWorkspace, root.followTarget);
+                    root.overviewWorkspace = root.followTarget;
+                    root.refreshAfterChange(dir);
+                }
                 else if (root.snapshotReason === "press" && root.buttonDown) {
                     root.dragStart = Windows.positionsOf(root.clients);
                     dragPoll.start();
@@ -789,6 +937,11 @@ Item {
             // A config reload drops runtime binds; put drag-to-snap back.
             if (event && event.name === "configreloaded") {
                 reloadCheck.restart();
+                return;
+            }
+            if (event && event.name === "workspacev2") {
+                if (root.mode === "overview" && !root.closing && Date.now() > root.ignoreWorkspaceUntil)
+                    root.followWorkspace(parseInt(event.data));
                 return;
             }
             if (!event || event.name !== "custom")
@@ -1157,33 +1310,8 @@ Item {
                 Keys.onEscapePressed: root.close()
                 Keys.onPressed: function(event) {
                     if (root.mode === "overview") {
-                        if ((event.modifiers & Qt.ControlModifier)
-                                && (event.key === Qt.Key_Left || event.key === Qt.Key_Right)) {
-                            root.stepOverviewWorkspace(event.key === Qt.Key_Right ? 1 : -1);
-                        } else if (event.key === Qt.Key_PageDown || event.key === Qt.Key_PageUp) {
-                            root.stepOverviewWorkspace(event.key === Qt.Key_PageDown ? 1 : -1);
-                        } else if (event.key === Qt.Key_Tab) {
-                            root.overviewMove(1);
-                        } else if (event.key === Qt.Key_Backtab) {
-                            root.overviewMove(-1);
-                        } else if (event.key === Qt.Key_Right) {
-                            root.overviewNeighbor("right");
-                        } else if (event.key === Qt.Key_Left) {
-                            root.overviewNeighbor("left");
-                        }
-                        else if (event.key === Qt.Key_Down)
-                            root.overviewNeighbor("down");
-                        else if (event.key === Qt.Key_Up)
-                            root.overviewNeighbor("up");
-                        else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
-                            root.focusWindow(root.candidates[root.overviewIndex].address);
-                        else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
-                            var jump = event.key - Qt.Key_1;
-                            if (jump < root.candidates.length)
-                                root.focusWindow(root.candidates[jump].address);
-                        } else
-                            return;
-                        event.accepted = true;
+                        if (!root.closing && root.overviewKey(event))
+                            event.accepted = true;
                     } else if (root.mode === "assist" && event.key === Qt.Key_Tab) {
                         root.assistSkip();
                         event.accepted = true;
@@ -1226,7 +1354,9 @@ Item {
                     visible: root.mode === "overview"
                     rects: root.overviewRects
                     clients: root.candidates
-                    selectedIndex: root.overviewIndex
+                    selectedIndex: root.stripFocus ? -1 : root.overviewIndex
+                    stripFocused: root.stripFocus
+                    morph: root.overviewMorph
                     progress: root.overviewT
                     topInset: root.monitor ? root.monitor.reserved[1] : 0
                     cornerRadius: root.style.rounding
@@ -1244,6 +1374,8 @@ Item {
                     onSelect: function(index) { root.overviewIndex = index; }
                     onActivated: function(address) { root.focusWindow(address); }
                     onWorkspaceChosen: function(entry) { root.chooseWorkspaceEntry(entry); }
+                    onWorkspaceActivated: function(entry) { root.goToWorkspace(entry.id); }
+                    onWorkspaceReorder: function(from, to) { root.swapWorkspaces(from, to); }
                     onMoveRequested: function(address, workspaceId) { root.moveWindowToWorkspace(address, workspaceId); }
                 }
 

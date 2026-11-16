@@ -15,6 +15,10 @@ Item {
     property var rect: null
     // 0 = the card sits exactly on the real window, 1 = settled in the overview.
     property real progress: 1
+    // False when the real window isn't on screen (another workspace is being
+    // looked at): the card then fades instead of travelling from its place.
+    property bool morph: true
+    readonly property real travel: morph ? progress : 1
 
     property var client: null           // the window's `hyprctl clients` entry
     property var toplevel: null         // its Hyprland toplevel, for the live picture
@@ -32,12 +36,12 @@ Item {
 
     readonly property int cornerRadius: 10
 
-    x: rect ? rect.rx + (rect.x - rect.rx) * progress : 0
-    y: rect ? rect.ry + (rect.y - rect.ry) * progress : 0
-    width: rect ? rect.rw + (rect.w - rect.rw) * progress : 0
-    height: rect ? rect.rh + (rect.h - rect.rh) * progress : 0
+    x: rect ? rect.rx + (rect.x - rect.rx) * travel : 0
+    y: rect ? rect.ry + (rect.y - rect.ry) * travel : 0
+    width: rect ? rect.rw + (rect.w - rect.rw) * travel : 0
+    height: rect ? rect.rh + (rect.h - rect.rh) * travel : 0
     z: selected ? 10 : 0
-    opacity: dragged ? 0.35 : (selected ? 1 : 0.9)
+    opacity: (morph ? 1 : progress) * (dragged ? 0.35 : (selected ? 1 : 0.9))
     scale: selected ? 1.05 : 1
     Behavior on opacity { NumberAnimation { duration: 140 } }
     Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }

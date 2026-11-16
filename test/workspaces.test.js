@@ -235,3 +235,25 @@ test("without reserved areas or an inset the whole monitor is used", () => {
     const [strip] = W.screens([], { 1: showing[1] }, 11, "");
     assert.ok(Math.abs(strip.aspect - 1536 / 864) < 1e-9);
 });
+
+// ---- keyboard stepping and reordering ----
+test("flatten lists every workspace in drawing order", () => {
+    const strips = W.screens([], showing, 1, "");
+    assert.deepEqual(W.flatten(strips).map((e) => e.id), [11, 12, 13, 14, 15, 1, 2, 3, 4, 5]);
+});
+
+test("stepping through all strips crosses to the other screen and wraps", () => {
+    const flat = W.flatten(W.screens([], showing, 1, ""));
+    assert.equal(W.stepWorkspace(flat, 15, 1), 1);
+    assert.equal(W.stepWorkspace(flat, 5, 1), 11);
+    assert.equal(W.stepWorkspace(flat, 11, -1), 5);
+});
+
+test("neighborIn gives the next workspace in a strip, without wrapping", () => {
+    const entries = W.screens([], showing, 1, "")[0].entries;     // 11..15
+    assert.equal(W.neighborIn(entries, 12, 1), 13);
+    assert.equal(W.neighborIn(entries, 12, -1), 11);
+    assert.equal(W.neighborIn(entries, 11, -1), -1);
+    assert.equal(W.neighborIn(entries, 15, 1), -1);
+    assert.equal(W.neighborIn(entries, 99, 1), -1);
+});
