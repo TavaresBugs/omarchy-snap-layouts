@@ -43,6 +43,10 @@ components/          views              lib/        decisions (pure JS)
 
 `lib/navigation.js` turns a key and the current state (focus on the windows or on the strip, selected card, layout) into an action; `SnapLayouts.overviewKey` only translates Qt's event into that input and carries the action out. Up from the top row enters the strip; Shift+arrow on the strip swaps workspace numbers (`Dispatch.swapWorkspaces`, three `change_id` steps through a free number).
 
+## Modal overview
+
+Hyprland handles shortcuts before the focused surface sees a key, so with the overview open a key like Super+Shift+arrow would also act on the windows behind it. `overview-mode.lua` (sent with `hyprctl eval` on every open) defines and enters a submap in which only a few binds exist: Alt+Tab, Super+Shift+arrow (reported to the plugin as `swap-<direction>` events), Super+1..0 (Omarchy's workspace focus) and Escape (the submap's reset key). Unbound keys go on to the overview. `hide()` leaves the submap; a `submap` event with an empty name (Escape) closes the overview; and the plugin resets the submap when it starts, so nothing can leave the shortcuts paused.
+
 ## Animation
 
 `overviewT` (0..1) drives both directions: opening runs it up, `close()` runs it back to 0 and only then hides the overview. Cards sit on their real window at 0 and in their place at 1; when the viewed workspace is not the one on screen they fade instead. The backdrop reaches full opacity in the first third, so the real windows are hidden while the cards still sit on them. A workspace change from outside (`workspacev2` event) re-reads the state and slides the new set in; events caused by the plugin's own moves are ignored for a moment.

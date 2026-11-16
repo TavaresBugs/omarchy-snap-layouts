@@ -99,9 +99,13 @@ On the workspace strip:
 | Key | Action |
 |---|---|
 | Left / Right | Look at the previous / next workspace (across screens, main first) |
-| Shift+Left / Shift+Right | Move the workspace one place: it trades numbers with its neighbour |
+| Shift+Left / Shift+Right, Super+Shift+Left / Right | Move the workspace one place: it trades numbers with its neighbour |
 | Enter | Go to the workspace |
 | Down | Back to the windows |
+
+Super+Shift+arrow works as it does on the desktop: on the windows it swaps the selected window with its neighbour in the real layout, and on the strip it swaps workspaces.
+
+While the overview is open the system's shortcuts are paused (it is modal), so a key meant for it can never act on the windows behind it. Still live: Alt+Tab (close), Super+1 to Super+0 (switch workspace, and the overview follows), Super+Shift+arrow (swap), and Escape (close). Other shortcuts, such as volume keys or the launcher, work again once it closes. This is done with a Hyprland submap defined in [`overview-mode.lua`](overview-mode.lua); the plugin leaves it when the overview closes and also resets it if it starts up while it is active.
 
 The overview also follows the system: pressing Super+1..5 (or any other way of changing workspace) while it is open moves its view to that workspace.
 

@@ -45,6 +45,10 @@ Item {
     property var manifest: null
     readonly property string pluginId: "io.github.n0rthstar88.snap-layouts"
 
+    // If the shell restarted while the overview's submap was active, shortcuts
+    // would stay paused; give them back.
+    Component.onCompleted: Quickshell.execDetached(["hyprctl", "eval", Dispatch.LEAVE_OVERVIEW_MODE])
+
     // The system's look, read from Hyprland with every snapshot (lib/style.js):
     // gap to the screen edge and border width.
     property var style: SystemStyle.resolve(null, null)
@@ -113,6 +117,12 @@ Item {
     property bool stripFocus: false
     // The overview is playing its closing animation.
     property bool closing: false
+    // The system's shortcuts are paused while the overview is open (see
+    // overview-mode.lua); this remembers that we asked, and when.
+    property bool modal: false
+    property double modalSince: 0
+    // A window to select again after the next refresh (it moved).
+    property string pendingSelect: ""
     // The overview shows the workspace the monitor is showing, so its windows
     // can travel to and from their real places; otherwise they fade.
     readonly property bool overviewMorph: root.monitor ? root.overviewWorkspace === root.monitor.workspaceId : true
@@ -183,6 +193,7 @@ Item {
         root.overviewWorkspace = m.workspaceId;
         root.refreshOverview(true);
         root.mode = "overview";
+        root.enterModal();
     }
 
     // The snapshot changed what a monitor shows: take the monitor again, then lay out.
@@ -215,6 +226,12 @@ Item {
         root.refreshStrips();
         root.candidates = list;
         root.overviewIndex = first ? Windows.previousWindowIndex(list) : 0;
+        if (root.pendingSelect !== "") {
+            for (var i = 0; i < list.length; i++)
+                if (list[i].address === root.pendingSelect)
+                    root.overviewIndex = i;
+            root.pendingSelect = "";
+        }
         var top = m.reserved[1] + (root.workspaceScreens.length > 0 ? 138 : 50);
         root.overviewRects = root.overviewLayout(list, { x: 70, y: top, w: m.w - 140, h: m.h - top - 70 });
         if (slide === undefined) {
@@ -243,6 +260,50 @@ Item {
     // A click on a strip thumbnail: look at that workspace's windows.
     function chooseWorkspaceEntry(entry) {
         root.switchOverviewWorkspace(entry.id);
+    }
+
+    // ---- Modal overview ----
+
+    // Pause the system's shortcuts while the overview is open, so a key meant for
+    // it can't also act on the windows behind it.
+    function enterModal() {
+        root.modal = true;
+        root.modalSince = Date.now();
+        Quickshell.execDetached(["hyprctl", "eval", "dofile(" + JSON.stringify(root.pluginDir + "/overview-mode.lua") + ")"]);
+    }
+
+    function leaveModal() {
+        if (!root.modal)
+            return;
+        root.modal = false;
+        Quickshell.execDetached(["hyprctl", "eval", Dispatch.LEAVE_OVERVIEW_MODE]);
+    }
+
+    // Super+Shift+arrow in the overview: swap, as the same keys do on the desktop.
+    // On the strip that is a workspace (left/right); on the windows, the selected
+    // window and its neighbour in the real layout.
+    function overviewSwap(direction) {
+        if (root.mode !== "overview" || root.closing)
+            return;
+        if (root.stripFocus || root.candidates.length === 0) {
+            if (direction === "left" || direction === "right")
+                root.swapOverviewWorkspace(direction === "right" ? 1 : -1);
+            return;
+        }
+        var real = root.overviewRects.map(function(r) { return { x: r.rx, y: r.ry, w: r.rw, h: r.rh }; });
+        var to = Overview.neighbor(real, root.overviewIndex, direction);
+        if (to === root.overviewIndex)
+            return;
+        var a = root.candidates[root.overviewIndex];
+        var b = root.candidates[to];
+        if (a.floating || b.floating)
+            return;
+        var lua = Dispatch.swapWindows(a.address, b.address);
+        if (lua === "")
+            return;
+        root.pendingSelect = a.address;
+        Quickshell.execDetached(["hyprctl", "eval", lua]);
+        refreshTimer.restart();
     }
 
     // ---- Following and changing workspaces ----
@@ -619,6 +680,7 @@ Item {
         closeAnim.stop();
         root.closing = false;
         root.stripFocus = false;
+        root.leaveModal();
         root.mode = "";
         root.assistPage = 0;
         root.edgePending = "";
@@ -939,6 +1001,15 @@ Item {
                 reloadCheck.restart();
                 return;
             }
+            // The submap was left from outside (Escape resets it): leave the overview too.
+            if (event && event.name === "submap") {
+                if (root.modal && root.mode === "overview" && !root.closing
+                        && event.data === "" && Date.now() - root.modalSince > 400) {
+                    root.modal = false;
+                    root.close();
+                }
+                return;
+            }
             if (event && event.name === "workspacev2") {
                 if (root.mode === "overview" && !root.closing && Date.now() > root.ignoreWorkspaceUntil)
                     root.followWorkspace(parseInt(event.data));
@@ -950,6 +1021,8 @@ Item {
                 root.toggle();
             else if (event.data === "io.github.n0rthstar88.snap-layouts:overview")
                 root.toggleOverview();
+            else if (event.data.indexOf("io.github.n0rthstar88.snap-layouts:swap-") === 0)
+                root.overviewSwap(event.data.substring("io.github.n0rthstar88.snap-layouts:swap-".length));
             // Title-bar drags (hyprbars) swallow the mouse button, so the
             // press/release binds never fire; hyprbars reports them itself.
             else if (event.data === "io.github.n0rthstar88.snap-layouts:press" || event.data === "hyprbars:dragstart")

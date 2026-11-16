@@ -18,6 +18,8 @@ Added
 - The overview closes by running the windows back to their places; the wallpaper is decoded before the first frame, so it no longer pops in during the opening.
 - Key handling for the overview moved to `lib/navigation.js` and is tested.
 
+- The overview is modal: the system's shortcuts are paused while it is open (a Hyprland submap, `overview-mode.lua`), so Super+Shift+arrow can no longer swap, or carry to another monitor, the window behind it. Alt+Tab, Super+1..0, Super+Shift+arrow and Escape stay live. Super+Shift+arrow now swaps the selected window with its neighbour, or a workspace with its neighbour on the strip.
+
 Fixed
 - The overview backdrop is one piece: the wallpaper is laid out over the whole screen exactly as the desktop draws it (so it lines up across the bar), the part below the bar is painted, and a single dim covers everything, bar included. It reaches the screen edges, so the focused window's border can't show around it, and it has no corners of its own to show.
 - Overview cards and workspace thumbnails share one frame (`ThumbFrame`): the same shadow, rounded clipping and a ring drawn above the content, so a picture can no longer spill over the outline. Workspace numbers are plain text instead of a badge.

@@ -55,3 +55,18 @@ test("going to a workspace uses Omarchy's slot on the owner monitor, or plain fo
     assert.equal(D.goToWorkspace(0, 3, "DP-3"), "");
     assert.equal(D.goToWorkspace(13, 3, "x'); evil('"), "hl.dispatch(hl.dsp.focus({ workspace = '13' }))");
 });
+
+test("two windows can trade places", () => {
+    const lua = D.swapWindows("0xaa", "0xbb");
+    assert.match(lua, /window\.swap\(\{ target = 'address:0xbb', window = 'address:0xaa' \}\)/);
+});
+
+test("trading places needs two different valid addresses", () => {
+    assert.equal(D.swapWindows("0xaa", "0xaa"), "");
+    assert.equal(D.swapWindows("0xaa", "nope"), "");
+    assert.equal(D.swapWindows("0x1'); os.execute('x", "0xbb"), "");
+});
+
+test("leaving the overview's submap only acts when it is the active one", () => {
+    assert.match(D.LEAVE_OVERVIEW_MODE, /get_current_submap\(\) == 'snap_layouts_overview'/);
+});
