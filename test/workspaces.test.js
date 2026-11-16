@@ -214,3 +214,24 @@ test("floating windows never split, and floating workspaces stay floating", () =
     const fws = W.dropPreview(entryOf(outline("f", 0, 0, 0.5, 0.5, { floating: true, floatSpace: true }), outline("t", 0, 0, 1, 1, { floatSpace: true })), dragged({ floating: true }), wide);
     assert.equal(fws.tile, false);
 });
+
+// ---- thumbnails show the usable area ----
+const withBar = {
+    1: { id: 1, name: "DP-3", workspaceId: 11, x: 0, y: 0, w: 1536, h: 864, reserved: [0, 26, 0, 0] }
+};
+
+test("a tiled window fills the whole thumbnail: the bar and the edge gap are left out", () => {
+    const [strip] = W.screens([win(11, 1, [2, 28], [1532, 834], { address: "t" })], withBar, 11, "", 2);
+    const w = strip.entries[0].windows[0];
+    assert.deepEqual([w.x, w.y, w.w, w.h], [0, 0, 1, 1]);
+});
+
+test("the strip's aspect is the usable area's", () => {
+    const [strip] = W.screens([], withBar, 11, "", 2);
+    assert.ok(Math.abs(strip.aspect - 1532 / 834) < 1e-9);
+});
+
+test("without reserved areas or an inset the whole monitor is used", () => {
+    const [strip] = W.screens([], { 1: showing[1] }, 11, "");
+    assert.ok(Math.abs(strip.aspect - 1536 / 864) < 1e-9);
+});

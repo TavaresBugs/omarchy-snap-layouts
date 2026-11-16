@@ -66,7 +66,7 @@ Item {
                                 return strip.drop.windows[i];
                     return w;
                 }
-                readonly property int inset: 3
+                readonly property int inset: 2
 
                 width: Math.round(strip.thumbHeight * strip.aspect)
                 height: strip.thumbHeight

@@ -165,7 +165,7 @@ Item {
         var offered = root.clients.filter(Windows.isSnappable);
         var byId = Monitors.indexById(root.monitorsIpc);
         root.workspaceScreens = root.options.overviewScope === "all" ? []
-            : Workspaces.screens(offered, byId, root.overviewWorkspace, root.mainMonitor);
+            : Workspaces.screens(offered, byId, root.overviewWorkspace, root.mainMonitor, root.style.outer);
     }
 
     // Lay out the windows of overviewWorkspace (or all of them). `first` also

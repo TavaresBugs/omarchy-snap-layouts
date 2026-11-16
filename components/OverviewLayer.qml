@@ -94,19 +94,28 @@ Item {
             layer.moveRequested(c.address, target);
     }
 
-    // Wallpaper, dimmed: hides the real windows behind the thumbnails. It covers
-    // exactly where windows can be (below the bar, inside the edge gap) and has
-    // the same rounded corners.
+    // Wallpaper, dimmed: hides the real windows behind the thumbnails. It reaches
+    // the screen edges, so the windows' borders can't show around it, and its
+    // corners are the window corners plus the edge gap, which is the same curve
+    // one gap further out.
     Backdrop {
-        x: layer.edgeGap
-        y: layer.topInset + layer.edgeGap
-        width: layer.width - 2 * layer.edgeGap
-        height: layer.height - layer.topInset - 2 * layer.edgeGap
+        y: layer.topInset
+        width: layer.width
+        height: layer.height - layer.topInset
         opacity: layer.progress
         base: Commons.Color.background
         wallpaper: layer.wallpaper
         dim: layer.dim
-        radius: layer.cornerRadius
+        radius: layer.cornerRadius > 0 ? layer.cornerRadius + layer.edgeGap : 0
+    }
+
+    // The bar keeps its own look, but is dimmed like the rest so it doesn't
+    // sit bright above a dark screen.
+    Rectangle {
+        width: layer.width
+        height: layer.topInset
+        color: "black"
+        opacity: layer.dim * layer.progress
     }
 
     // The strips: the main screen big, the others small, always in the same order.

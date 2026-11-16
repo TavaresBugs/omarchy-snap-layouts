@@ -14,7 +14,9 @@ Added
 - Optional Hyprland extras: key bindings and a floating-window limiter.
 
 Fixed
-- The overview backdrop follows the system's look: it sits inside the edge gap below the bar and has the same rounded corners as windows. Rounding, edge gap and border width are read from Hyprland (`lib/style.js`) instead of being written in the plugin, so a theme change is followed.
+- The overview backdrop follows the system's look: it reaches the screen edges (so the focused window's border can't show around it) and has the window corner curve, one gap further out. The bar strip is dimmed like the rest of the screen.
+- Workspace thumbnails show the usable area (without the bar and edge gap), so tiled windows fill them.
+- (Earlier in this release) the backdrop used the window rounding. Rounding, edge gap and border width are read from Hyprland (`lib/style.js`) instead of being written in the plugin, so a theme change is followed.
 - Snap assist only offers windows of the workspace being filled.
 - Snapped windows no longer leave a gap at the top on tiled workspaces: the title bar height is only added for windows on floating workspaces.
 - Drag detection recognises tiled windows as well as floating ones.
