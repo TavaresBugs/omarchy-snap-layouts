@@ -1,14 +1,12 @@
-pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Effects
-import Quickshell.Wayland
 import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
+import "Util.js" as Util
 
-// One window in the overview: a live thumbnail with rounded corners and a soft
-// shadow, the app icon sitting on its bottom edge, and the title below it when
-// selected. It knows nothing about the plugin: data comes in as properties and
-// user actions go out as signals.
+// One window in the overview: its picture, a soft shadow, the app icon sitting
+// on its bottom edge, and the title below it when selected. It knows nothing
+// about the plugin: data comes in as properties and user actions go out as
+// signals.
 Item {
     id: card
 
@@ -27,11 +25,6 @@ Item {
     signal activated()
 
     readonly property int cornerRadius: 10
-    readonly property var capture: toplevel && toplevel.wayland ? toplevel.wayland : null
-
-    function withAlpha(c, a) {
-        return Qt.rgba(c.r, c.g, c.b, a);
-    }
 
     x: rect ? rect.rx + (rect.x - rect.rx) * progress : 0
     y: rect ? rect.ry + (rect.y - rect.ry) * progress : 0
@@ -59,39 +52,12 @@ Item {
         Behavior on opacity { NumberAnimation { duration: 140 } }
     }
 
-    // The window picture, clipped to rounded corners.
-    Item {
+    WindowPicture {
         anchors.fill: parent
-        layer.enabled: true
-        layer.smooth: true
-        layer.effect: MultiEffect {
-            maskEnabled: true
-            maskSource: roundedMask
-            maskThresholdMin: 0.3
-            maskSpreadAtMin: 0.3
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            color: card.withAlpha(Commons.Color.popups.background, 0.9)
-        }
-
-        ScreencopyView {
-            id: picture
-            anchors.fill: parent
-            captureSource: card.capture
-            live: false
-            paintCursor: false
-        }
-    }
-
-    Rectangle {
-        id: roundedMask
-        anchors.fill: parent
-        visible: false
-        layer.enabled: true
-        radius: card.cornerRadius
-        color: "black"
+        toplevel: card.toplevel
+        iconSource: card.client ? card.iconSource : ""
+        cornerRadius: card.cornerRadius
+        backdrop: Util.withAlpha(Commons.Color.popups.background, 0.9)
     }
 
     // Thin, quiet selection ring.
@@ -99,21 +65,10 @@ Item {
         anchors.fill: parent
         radius: card.cornerRadius
         color: "transparent"
-        border.color: card.withAlpha(Commons.Color.popups.text, 0.85)
+        border.color: Util.withAlpha(Commons.Color.popups.text, 0.85)
         border.width: 2
         opacity: card.selected ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 120 } }
-    }
-
-    // Minimized or uncapturable windows show their icon in the middle.
-    Image {
-        anchors.centerIn: parent
-        visible: !picture.hasContent && card.client !== null
-        width: Math.min(56, parent.height * 0.5)
-        height: width
-        source: card.iconSource
-        sourceSize.width: 112
-        sourceSize.height: 112
     }
 
     // App icon on the bottom edge.
@@ -134,7 +89,7 @@ Item {
         width: Math.max(parent.width, 200)
         horizontalAlignment: Text.AlignHCenter
         text: card.client ? String(card.client.title || card.client.class || "") : ""
-        color: card.withAlpha(Commons.Color.popups.text, 0.9)
+        color: Util.withAlpha(Commons.Color.popups.text, 0.9)
         font.family: Qt.application.font.family
         font.pixelSize: Style.font.body
         elide: Text.ElideRight
