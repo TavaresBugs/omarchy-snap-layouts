@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.n0rthstar88.snap-layouts",
   "name": "Snap layouts",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "n0rthstar88",
   "license": "MIT",
-  "description": "Snap layouts for floating windows: drag a window to the top of the screen or press a shortcut, pick a zone, then pick which windows fill the rest.",
+  "description": "Snap layouts for floating windows: drag to the top, an edge or a corner, or press a shortcut, pick a zone, then pick which windows fill the rest. Also an Alt+Tab style window overview.",
   "homepage": "https://github.com/n0rthstar88/omarchy-snap-layouts",
   "repository": "https://github.com/n0rthstar88/omarchy-snap-layouts",
   "keywords": [

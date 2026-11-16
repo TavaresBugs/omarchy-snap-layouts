@@ -15,18 +15,25 @@ import "lib/windows.js" as Windows
 import "lib/overview.js" as Overview
 import "lib/settings.js" as Settings
 
-// Windows 11-style snap layouts for floating Hyprland windows.
+// Windows 11-style snap layouts for Hyprland windows, plus an Alt+Tab style overview.
 //
-// Three ways in:
+// Ways in:
 //   - Super+Z (Hyprland event "io.github.n0rthstar88.snap-layouts:toggle") opens the layout
 //     picker for the focused window.
 //   - Dragging a window to the top edge of a screen shows the same picker;
 //     releasing over a zone snaps the window there. The plugin installs the
 //     mouse binds for this itself (hook.lua); see "Drag-to-snap setting".
-//   - omarchy-shell snaplayouts toggle
+//   - Dragging against a side edge or a corner (or the very top) shows a preview
+//     of a half, a quarter or the whole usable area; releasing snaps there.
+//   - "...:overview" (for example on Alt+Tab) opens the window overview.
+//   - omarchy-shell snaplayouts toggle | overview
 //
 // After the first window is placed, "snap assist" offers the other open
 // windows for each remaining zone of the chosen layout.
+//
+// Structure: decisions live in lib/ (pure JS, unit tested), views in components/,
+// and this file keeps the state machine and the Hyprland I/O. See
+// docs/ARCHITECTURE.md.
 Item {
     id: root
 

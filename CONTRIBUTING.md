@@ -13,7 +13,9 @@ omarchy plugin enable io.github.n0rthstar88.snap-layouts
 omarchy restart shell
 ```
 
-Copy your changes across and restart the shell after each QML change, and run `omarchy plugin validate .` before opening a pull request.
+Copy your changes across (the `lib/` and `components/` folders too) and restart the shell after each QML change. Run `npm test` and `omarchy plugin validate .` before opening a pull request.
+
+Put decisions that can be made from plain data in `lib/` with a test, keep views in `components/` driven by properties and signals, and keep `SnapLayouts.qml` for state and Hyprland I/O. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Pull requests
 
