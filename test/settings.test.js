@@ -15,8 +15,8 @@ test("the overview is limited to the current workspace by default", () => {
 });
 
 test("valid values are used", () => {
-    const o = S.resolve({ edgeSnap: false, edgeDwellMs: 500, edgeMargin: 20, edgeCorner: 120, overviewScope: "all" });
-    assert.deepEqual(o, { edgeSnap: false, edgeDwellMs: 500, edgeMargin: 20, edgeCorner: 120, overviewScope: "all" });
+    const o = S.resolve({ edgeSnap: false, edgeDwellMs: 500, edgeMargin: 20, edgeCorner: 120, overviewScope: "all", mainMonitor: "DP-3" });
+    assert.deepEqual(o, { edgeSnap: false, edgeDwellMs: 500, edgeMargin: 20, edgeCorner: 120, overviewScope: "all", mainMonitor: "DP-3" });
 });
 
 test("unknown scope falls back to the default", () => {
@@ -42,4 +42,11 @@ test("numbers are clamped to sane limits", () => {
 test("unrelated keys in the entry are ignored", () => {
     const o = S.resolve({ id: "x", dragToSnap: true, whatever: 1 });
     assert.deepEqual(o, S.DEFAULTS);
+});
+
+test("the main monitor is a connector name or empty", () => {
+    assert.equal(S.resolve({}).mainMonitor, "");
+    assert.equal(S.resolve({ mainMonitor: "eDP-1" }).mainMonitor, "eDP-1");
+    assert.equal(S.resolve({ mainMonitor: "x'); evil('" }).mainMonitor, "");
+    assert.equal(S.resolve({ mainMonitor: 4 }).mainMonitor, "");
 });

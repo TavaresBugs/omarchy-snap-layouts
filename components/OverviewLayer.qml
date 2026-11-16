@@ -28,17 +28,19 @@ Item {
     property url wallpaper: ""
     property real dim: 0.55
 
-    // Workspace strip (hidden when `workspaces` is empty). `otherScreens` holds
-    // a smaller strip for every other monitor: [{ name, workspaceId, entries }].
-    property var workspaces: []
-    property var otherScreens: []
+    // One strip per screen (hidden when empty), the main screen first and big,
+    // the others small: [{ name, main, workspaceId, aspect, entries }].
+    property var screens: []
+    // The workspace being looked at.
     property int workspaceId: 0
-    property real monitorAspect: 16 / 9
     property string emptyText: ""
 
     // Lookups the plugin provides, so this file needs no knowledge of Hyprland.
     property var toplevelFor: function(address) { return null; }
     property var iconFor: function(client) { return ""; }
+    // What dropping a window on a workspace would look like, or null:
+    // function(workspaceId, address) -> { windows, slot }.
+    property var previewFor: function(workspaceId, address) { return null; }
 
     signal select(int index)
     signal activated(string address)
@@ -50,14 +52,13 @@ Item {
     property int dragIndex: -1
     property point dragPoint: Qt.point(0, 0)
     property int dropId: -1
+    property var dropInfo: null
 
     function workspaceAt(p) {
-        var strips = [mainStrip];
-        for (var i = 0; i < others.count; i++)
-            strips.push(others.itemAt(i).strip);
-        for (var j = 0; j < strips.length; j++) {
-            var q = strips[j].mapFromItem(layer, p.x, p.y);
-            var id = strips[j].idAt(q.x, q.y);
+        for (var i = 0; i < screenRepeater.count; i++) {
+            var strip = screenRepeater.itemAt(i).strip;
+            var q = strip.mapFromItem(layer, p.x, p.y);
+            var id = strip.idAt(q.x, q.y);
             if (id > 0)
                 return id;
         }
@@ -68,6 +69,8 @@ Item {
         dragIndex = index;
         dragPoint = layer.mapFromItem(null, sx, sy);
         dropId = layer.workspaceAt(dragPoint);
+        var c = clients[index];
+        dropInfo = dropId > 0 && c ? layer.previewFor(dropId, c.address) : null;
     }
 
     function finishDrag(index, sx, sy) {
@@ -76,6 +79,7 @@ Item {
         var target = dropId;
         dragIndex = -1;
         dropId = -1;
+        dropInfo = null;
         if (c && target > 0 && Number(c.workspace.id) !== target)
             layer.moveRequested(c.address, target);
     }
@@ -106,58 +110,47 @@ Item {
         }
     }
 
-    // The workspaces of this screen, and small ones for the other screens.
+    // The strips: the main screen big, the others small, always in the same order.
     Row {
         id: band
-        visible: layer.workspaces.length > 0
+        visible: layer.screens.length > 0
         anchors.horizontalCenter: parent.horizontalCenter
         y: layer.topInset + 14
         spacing: 36
         opacity: layer.progress
         z: 20
 
-        WorkspaceStrip {
-            id: mainStrip
-            entries: layer.workspaces
-            selectedId: layer.workspaceId
-            aspect: layer.monitorAspect
-            thumbHeight: layer.otherScreens.length > 0 ? 68 : 76
-            dropId: layer.dropId
-            toplevelFor: layer.toplevelFor
-            onChosen: function(entry) { layer.workspaceChosen(entry); }
-        }
+        Repeater {
+            id: screenRepeater
+            model: layer.screens
 
-        Column {
-            spacing: 6
-            anchors.verticalCenter: mainStrip.verticalCenter
+            Column {
+                id: screen
+                required property var modelData
+                readonly property bool main: modelData.main
+                property alias strip: strip
+                spacing: 3
+                y: (band.height - height) / 2
 
-            Repeater {
-                id: others
-                model: layer.otherScreens
+                Text {
+                    text: screen.modelData.name
+                    color: Util.withAlpha(Commons.Color.popups.text, screen.main ? 0.75 : 0.6)
+                    font.family: Qt.application.font.family
+                    font.pixelSize: Style.font.body - 3
+                }
 
-                Column {
-                    id: screen
-                    required property var modelData
-                    property alias strip: smallStrip
-                    spacing: 3
-
-                    Text {
-                        text: screen.modelData.name
-                        color: Util.withAlpha(Commons.Color.popups.text, 0.6)
-                        font.family: Qt.application.font.family
-                        font.pixelSize: Style.font.body - 3
-                    }
-
-                    WorkspaceStrip {
-                        id: smallStrip
-                        entries: screen.modelData.entries
-                        selectedId: screen.modelData.workspaceId
-                        aspect: layer.monitorAspect
-                        thumbHeight: 40
-                        dropId: layer.dropId
-                        toplevelFor: layer.toplevelFor
-                        onChosen: function(entry) { layer.workspaceChosen(entry); }
-                    }
+                WorkspaceStrip {
+                    id: strip
+                    entries: screen.modelData.entries
+                    selectedId: layer.workspaceId
+                    aspect: screen.modelData.aspect
+                    thumbHeight: screen.main ? (layer.screens.length > 1 ? 68 : 76) : 40
+                    dropId: layer.dropId
+                    drop: layer.dropInfo
+                    dropToplevel: layer.dragIndex >= 0 && layer.clients[layer.dragIndex]
+                        ? layer.toplevelFor(layer.clients[layer.dragIndex].address) : null
+                    toplevelFor: layer.toplevelFor
+                    onChosen: function(entry) { layer.workspaceChosen(entry); }
                 }
             }
         }

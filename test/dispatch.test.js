@@ -26,3 +26,10 @@ test("invalid addresses, ids and monitor names produce no code", () => {
     assert.equal(D.moveToWorkspace("0x1", 2.5), "");
     assert.equal(D.moveToWorkspace("0x1", 3, "x'); evil('"), "");
 });
+
+test("a window can be tiled on arrival", () => {
+    assert.match(D.moveToWorkspace("0xabc", 3, "", true), /float\(\{ action = 'off'.*address:0xabc/);
+    assert.doesNotMatch(D.moveToWorkspace("0xabc", 3, "", false), /float/);
+    const lua = D.moveToWorkspace("0xabc", 4, "eDP-1", true);
+    assert.ok(lua.indexOf("float") > lua.indexOf("window.move"));
+});

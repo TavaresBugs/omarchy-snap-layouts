@@ -58,7 +58,7 @@ test("workspaces 6 to 10 appear only when they hold windows or are current", () 
 
 test("window outlines are fractions of their monitor", () => {
     const [ws] = W.buildStrip([win(11, 1, [768, 0], [768, 864], { address: "a" })], monitors, 11);
-    assert.deepEqual(ws.windows[0], { x: 0.5, y: 0, w: 0.5, h: 1, address: "a" });
+    assert.deepEqual(ws.windows[0], { x: 0.5, y: 0, w: 0.5, h: 1, address: "a", floating: false, floatSpace: false });
 });
 
 test("outlines are measured from the monitor's own origin", () => {
@@ -114,15 +114,89 @@ test("the monitor owning a workspace is the one showing its block", () => {
     assert.equal(W.monitorFor(25, showing), null);
 });
 
-test("other strips cover every monitor except the one being looked at", () => {
-    const others = W.otherStrips([win(1, 0, [1540, 30], [640, 360], { address: "s" })], showing, 11);
-    assert.equal(others.length, 1);
-    assert.equal(others[0].name, "eDP-1");
-    assert.deepEqual(others[0].entries.map((e) => e.id), [1, 2, 3, 4, 5]);
-    assert.equal(others[0].entries[0].count, 1);
-    assert.equal(W.otherStrips([], showing, 3)[0].name, "DP-3");
+test("screens: the first block is the main one, whichever screen is being looked at", () => {
+    const fromLaptop = W.screens([], showing, 1, "");
+    const fromOther = W.screens([], showing, 11, "");
+    assert.deepEqual(fromLaptop.map((s) => s.name), ["eDP-1", "DP-3"]);
+    assert.deepEqual(fromOther.map((s) => s.name), ["eDP-1", "DP-3"]);
+    assert.deepEqual(fromOther.map((s) => s.main), [true, false]);
 });
 
-test("a single monitor has no other strips", () => {
-    assert.deepEqual(W.otherStrips([], { 1: showing[1] }, 11), []);
+test("screens: a named main monitor goes first", () => {
+    assert.deepEqual(W.screens([], showing, 1, "DP-3").map((s) => s.name), ["DP-3", "eDP-1"]);
+    assert.deepEqual(W.screens([], showing, 1, "nope").map((s) => s.name), ["eDP-1", "DP-3"]);
+});
+
+test("each screen's strip is its own block, with its windows", () => {
+    const [main, other] = W.screens([win(11, 1, [4, 30], [762, 830])], showing, 1, "");
+    assert.deepEqual(main.entries.map((e) => e.id), [1, 2, 3, 4, 5]);
+    assert.deepEqual(other.entries.map((e) => e.id), [11, 12, 13, 14, 15]);
+    assert.equal(other.entries[0].count, 1);
+    assert.equal(main.workspaceId, 1);
+    assert.ok(Math.abs(other.aspect - 1536 / 864) < 1e-9);
+});
+
+test("a viewed workspace past the fifth is shown even when empty", () => {
+    const [, other] = W.screens([], showing, 17, "");
+    assert.deepEqual(other.entries.map((e) => e.id), [11, 12, 13, 14, 15, 17]);
+});
+
+test("a single monitor gives a single strip", () => {
+    assert.equal(W.screens([], { 1: showing[1] }, 11, "").length, 1);
+});
+
+test("entriesFor finds the strip holding a workspace", () => {
+    const strips = W.screens([], showing, 1, "");
+    assert.deepEqual(W.entriesFor(strips, 13).map((e) => e.id), [11, 12, 13, 14, 15]);
+    assert.deepEqual(W.entriesFor(strips, 99).map((e) => e.id), [1, 2, 3, 4, 5]);
+    assert.deepEqual(W.entriesFor([], 1), []);
+});
+
+// ---- drop preview ----
+const outline = (address, x, y, w, h, extra) => Object.assign({ x, y, w, h, address, floating: false, floatSpace: false }, extra);
+const entryOf = (...windows) => ({ id: 12, windows, count: windows.length });
+const dragged = (extra) => Object.assign({ address: "new", floating: false, pinned: false }, extra);
+const wide = 16 / 9;
+
+test("dropping onto an empty workspace fills it", () => {
+    const p = W.dropPreview(entryOf(), dragged(), wide);
+    assert.deepEqual(p.slot, { x: 0, y: 0, w: 1, h: 1 });
+    assert.equal(p.tile, true);
+});
+
+test("dropping next to one full-screen window splits it 50/50, new window on the right", () => {
+    const p = W.dropPreview(entryOf(outline("a", 0, 0, 1, 1)), dragged(), wide);
+    assert.deepEqual(p.slot, { x: 0.5, y: 0, w: 0.5, h: 1 });
+    assert.deepEqual(p.windows.map((w) => [w.x, w.w]), [[0, 0.5]]);
+});
+
+test("the most recently used tiled window is the one that splits", () => {
+    const p = W.dropPreview(entryOf(outline("old", 0, 0, 0.5, 1), outline("recent", 0.5, 0, 0.5, 1)), dragged(), wide);
+    assert.deepEqual(p.windows.map((w) => w.address), ["old", "recent"]);
+    assert.deepEqual(p.windows[0], outline("old", 0, 0, 0.5, 1));
+    assert.deepEqual(p.slot, { x: 0.5, y: 0.5, w: 0.5, h: 0.5 });   // a tall half splits top/bottom
+    assert.equal(p.windows[1].h, 0.5);
+});
+
+test("a window already on that workspace is not counted twice", () => {
+    const p = W.dropPreview(entryOf(outline("new", 0, 0, 1, 1)), dragged(), wide);
+    assert.deepEqual(p.slot, { x: 0, y: 0, w: 1, h: 1 });
+    assert.equal(p.windows.length, 0);
+});
+
+test("a floating window is tiled on arrival only next to tiled windows", () => {
+    const next = W.dropPreview(entryOf(outline("a", 0, 0, 1, 1)), dragged({ floating: true }), wide);
+    assert.equal(next.tile, true);
+    const alone = W.dropPreview(entryOf(), dragged({ floating: true }), wide);
+    assert.equal(alone.tile, false);
+    assert.equal(alone.slot, null);
+    const pinned = W.dropPreview(entryOf(outline("a", 0, 0, 1, 1)), dragged({ floating: true, pinned: true }), wide);
+    assert.equal(pinned.tile, false);
+});
+
+test("floating windows never split, and floating workspaces stay floating", () => {
+    const over = W.dropPreview(entryOf(outline("t", 0, 0, 1, 1), outline("f", 0.2, 0.2, 0.3, 0.3, { floating: true })), dragged(), wide);
+    assert.deepEqual(over.slot, { x: 0.5, y: 0, w: 0.5, h: 1 });
+    const fws = W.dropPreview(entryOf(outline("f", 0, 0, 0.5, 0.5, { floating: true, floatSpace: true }), outline("t", 0, 0, 1, 1, { floatSpace: true })), dragged({ floating: true }), wide);
+    assert.equal(fws.tile, false);
 });

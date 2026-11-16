@@ -96,7 +96,7 @@ It shows the windows of the current workspace, plus the ones minimized from it; 
 
 **Workspace strip.** At the top, one thumbnail per workspace of the monitor you are on, following Omarchy's per-monitor blocks of ten (the first five always, the others when they hold windows or are current), labelled like the bar. Each thumbnail shows its windows live, at their real positions; empty workspaces are dimmed. Click one, or press Ctrl+Left/Right or PageUp/PageDown, to look at that workspace's windows. Thumbnails are arranged in rows of equal height: one window, two side by side, three as 2+1, four as 2+2, and so on.
 
-**Moving windows.** Drag a thumbnail onto any workspace in the strip to send the window there without leaving the overview. With more than one monitor, a smaller strip for every other screen sits beside the main one, so a window can be dropped onto a workspace of another screen (the workspace is created on that screen if it is empty). Clicking a thumbnail in either strip shows that workspace's windows.
+**Moving windows.** Drag a thumbnail onto any workspace in the strip to send the window there without leaving the overview. While you drag, the workspace under the pointer previews the result: the window's slot appears in the thumbnail, with the window it will split (50/50, along the longer side) shrinking to make room. A floating window dropped next to tiled ones is tiled on arrival. With more than one monitor there is one strip per screen: the main screen is big and the others small, always in the same order whichever screen you open the overview on. The main screen is the one with the first block of workspaces (the laptop panel on Omarchy); set `mainMonitor` to a connector name such as `"DP-3"` to pick another. A window can be dropped onto a workspace of any screen (an empty workspace is created on that screen). Clicking a thumbnail in any strip shows that workspace's windows.
 
 A tiled window can never be drawn above floating ones in Hyprland. When you pick a tiled window that floating windows cover, those floating windows join the tiling layout, so everything stays visible and resizable. Pinned and fullscreen windows are left alone.
 
@@ -124,7 +124,8 @@ Options go in this plugin's entry in `~/.config/omarchy/shell.json`. Anything mi
   "edgeDwellMs": 320,
   "edgeMargin": 12,
   "edgeCorner": 90,
-  "overviewScope": "workspace" }
+  "overviewScope": "workspace",
+  "mainMonitor": "" }
 ```
 
 | Option | Default | Meaning |
@@ -134,6 +135,7 @@ Options go in this plugin's entry in `~/.config/omarchy/shell.json`. Anything mi
 | `edgeMargin` | `12` | Pixels from the edge that count as "at the edge" (1 to 80) |
 | `edgeCorner` | `90` | Pixels along an edge that count as a corner (10 to 400) |
 | `overviewScope` | `"workspace"` | `"workspace"` or `"all"` |
+| `mainMonitor` | `""` | Connector shown big in the overview strip, e.g. `"DP-3"`; empty = the screen with the first workspace block |
 
 ## Configuration
 

@@ -20,6 +20,10 @@ Item {
     property var toplevelFor: function(address) { return null; }
     // A window is being dragged over this workspace (or -1): it lights up as a drop target.
     property int dropId: -1
+    // What the drop would look like: { windows, slot } from Workspaces.dropPreview,
+    // and the picture of the window being dropped, shown in its slot.
+    property var drop: null
+    property var dropToplevel: null
 
     signal chosen(var entry)
 
@@ -52,6 +56,16 @@ Item {
                 readonly property bool selected: modelData.id === strip.selectedId
                 readonly property bool empty: modelData.count === 0
                 readonly property bool target: modelData.id === strip.dropId
+                readonly property bool previewing: target && strip.drop !== null
+
+                // Where a window sits: after the drop, if this is the target.
+                function frameOf(w) {
+                    if (previewing)
+                        for (var i = 0; i < strip.drop.windows.length; i++)
+                            if (strip.drop.windows[i].address === w.address)
+                                return strip.drop.windows[i];
+                    return w;
+                }
                 readonly property int inset: 3
 
                 width: Math.round(strip.thumbHeight * strip.aspect)
@@ -71,15 +85,48 @@ Item {
                     model: thumb.modelData.windows
 
                     WindowPicture {
+                        id: pic
                         required property var modelData
-                        x: thumb.inset + modelData.x * (thumb.width - 2 * thumb.inset)
-                        y: thumb.inset + modelData.y * (thumb.height - 2 * thumb.inset)
-                        width: Math.max(4, modelData.w * (thumb.width - 2 * thumb.inset))
-                        height: Math.max(4, modelData.h * (thumb.height - 2 * thumb.inset))
+                        readonly property var frame: thumb.frameOf(modelData)
+                        x: thumb.inset + frame.x * (thumb.width - 2 * thumb.inset)
+                        y: thumb.inset + frame.y * (thumb.height - 2 * thumb.inset)
+                        width: Math.max(4, frame.w * (thumb.width - 2 * thumb.inset))
+                        height: Math.max(4, frame.h * (thumb.height - 2 * thumb.inset))
+                        Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                        Behavior on y { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                        Behavior on width { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                        Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
                         toplevel: strip.toplevelFor(modelData.address)
                         cornerRadius: 3
                         backdrop: Util.withAlpha(Commons.Color.background, 0.8)
                         fallbackIconSize: 0
+                    }
+                }
+
+                // Where the dropped window will land: its slot, filled with its picture.
+                Item {
+                    id: slot
+                    readonly property var rect: strip.drop ? strip.drop.slot : null
+                    visible: thumb.previewing && rect !== null
+                    x: thumb.inset + (rect ? rect.x : 0) * (thumb.width - 2 * thumb.inset)
+                    y: thumb.inset + (rect ? rect.y : 0) * (thumb.height - 2 * thumb.inset)
+                    width: Math.max(4, (rect ? rect.w : 0) * (thumb.width - 2 * thumb.inset))
+                    height: Math.max(4, (rect ? rect.h : 0) * (thumb.height - 2 * thumb.inset))
+
+                    WindowPicture {
+                        anchors.fill: parent
+                        toplevel: strip.dropToplevel
+                        cornerRadius: 3
+                        backdrop: Util.withAlpha(Commons.Color.popups.text, 0.25)
+                        fallbackIconSize: 0
+                        opacity: 0.8
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 3
+                        color: Util.withAlpha(Commons.Color.popups.text, 0.18)
+                        border.color: Util.withAlpha(Commons.Color.popups.text, 0.95)
+                        border.width: 1.5
                     }
                 }
 

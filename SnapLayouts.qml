@@ -108,8 +108,7 @@ Item {
     property var overviewRects: []
     // The workspace whose windows the overview shows, and the strip of all of them.
     property int overviewWorkspace: 0
-    property var workspaceStrip: []
-    property var otherScreens: []
+    property var workspaceScreens: []
     // 0 = every window sits where it really is, 1 = settled in the overview.
     property real overviewT: 1
     NumberAnimation {
@@ -171,11 +170,10 @@ Item {
         });
         var list = Windows.sortForOverview(scoped);
         var byId = Monitors.indexById(root.monitorsIpc);
-        root.workspaceStrip = showAll ? [] : Workspaces.buildStrip(offered, byId, root.overviewWorkspace);
-        root.otherScreens = showAll ? [] : Workspaces.otherStrips(offered, byId, root.overviewWorkspace);
+        root.workspaceScreens = showAll ? [] : Workspaces.screens(offered, byId, root.overviewWorkspace, root.options.mainMonitor);
         root.candidates = list;
         root.overviewIndex = first ? Windows.previousWindowIndex(list) : 0;
-        var top = m.reserved[1] + (root.workspaceStrip.length > 0 ? 138 : 50);
+        var top = m.reserved[1] + (root.workspaceScreens.length > 0 ? 138 : 50);
         root.overviewRects = root.overviewLayout(list, { x: 70, y: top, w: m.w - 140, h: m.h - top - 70 });
         root.overviewT = 0;
         overviewAnim.restart();
@@ -189,7 +187,7 @@ Item {
     }
 
     function stepOverviewWorkspace(delta) {
-        root.switchOverviewWorkspace(Workspaces.stepWorkspace(root.workspaceStrip, root.overviewWorkspace, delta));
+        root.switchOverviewWorkspace(Workspaces.stepWorkspace(Workspaces.entriesFor(root.workspaceScreens, root.overviewWorkspace), root.overviewWorkspace, delta));
     }
 
     // A click on a strip thumbnail: look at that workspace's windows.
@@ -197,11 +195,25 @@ Item {
         root.switchOverviewWorkspace(entry.id);
     }
 
-    // A card dropped on a workspace: send the window there, stay in the overview
-    // and show the result once Hyprland has moved it.
+    // What dropping a window onto a workspace would look like, for the strips.
+    function previewDrop(workspaceId, address) {
+        var c = root.clientByAddress(address);
+        for (var i = 0; c && i < root.workspaceScreens.length; i++) {
+            var screen = root.workspaceScreens[i];
+            for (var j = 0; j < screen.entries.length; j++)
+                if (screen.entries[j].id === workspaceId)
+                    return Workspaces.dropPreview(screen.entries[j], c, screen.aspect);
+        }
+        return null;
+    }
+
+    // A card dropped on a workspace: send the window there (tiled, if it is
+    // joining a tiled layout), stay in the overview and show the result once
+    // Hyprland has moved it.
     function moveWindowToWorkspace(address, workspaceId) {
         var owner = Workspaces.monitorFor(workspaceId, Monitors.indexById(root.monitorsIpc));
-        var lua = Dispatch.moveToWorkspace(address, workspaceId, owner ? owner.name : "");
+        var preview = root.previewDrop(workspaceId, address);
+        var lua = Dispatch.moveToWorkspace(address, workspaceId, owner ? owner.name : "", preview ? preview.tile : false);
         if (lua === "")
             return;
         Quickshell.execDetached(["hyprctl", "eval", lua]);
@@ -1183,10 +1195,9 @@ Item {
                     wallpaper: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/current/background"
                     toplevelFor: root.toplevelFor
                     iconFor: root.iconFor
-                    workspaces: root.workspaceStrip
-                    otherScreens: root.otherScreens
+                    screens: root.workspaceScreens
+                    previewFor: root.previewDrop
                     workspaceId: root.overviewWorkspace
-                    monitorAspect: root.monitor ? root.monitor.w / root.monitor.h : 16 / 9
                     emptyText: qsTr("Nenhuma janela neste workspace")
                     onSelect: function(index) { root.overviewIndex = index; }
                     onActivated: function(address) { root.focusWindow(address); }
