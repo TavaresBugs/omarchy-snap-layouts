@@ -10,7 +10,7 @@ components/          views              lib/        decisions (pure JS)
 
 **`lib/`** holds every decision (and the Lua it sends to Hyprland) that can be made from plain data: where a zone lands, which zone the pointer is asking for, how windows are ordered, how thumbnails are laid out, which arrow key goes where, what the options mean. The files are QML JavaScript libraries (`.pragma library`) and use no Qt objects, so `test/load.js` can load them in node and `npm test` covers them.
 
-**`components/`** only draw. Each takes data as properties and reports what the user did as signals. They never read Hyprland or the plugin's state, so they can be reused or restyled on their own. `WindowPicture` (rounded capture with an icon fallback) is shared by the overview and snap assist.
+**`components/`** only draw. Each takes data as properties and reports what the user did as signals. They never read Hyprland or the plugin's state, so they can be reused or restyled on their own. Two pieces are shared so every thumbnail looks like part of one family: `ThumbFrame` (soft shadow, content clipped to rounded corners, a thin ring drawn above the content so nothing spills over the outline) and `WindowPicture` (a window's capture with an icon fallback). `OverviewCard` (overview and snap assist) and the workspace strip's thumbnails are both built on them.
 
 **`SnapLayouts.qml`** owns what is left: the current mode, polling `hyprctl` while a button is held, the Hyprland and shell events, the IPC handler, reading `shell.json`, and issuing `hyprctl eval` commands. It converts between Hyprland's data and the libraries' inputs, and feeds results to the components.
 

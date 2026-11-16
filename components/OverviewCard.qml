@@ -3,7 +3,7 @@ import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
 import "Util.js" as Util
 
-// One window in the overview: its picture, a soft shadow, the app icon sitting
+// One window in the overview: its picture in a ThumbFrame, the app icon sitting
 // on its bottom edge, and the title below it when selected. It knows nothing
 // about the plugin: data comes in as properties and user actions go out as
 // signals.
@@ -46,35 +46,18 @@ Item {
         Behavior on y { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
     }
 
-    // Soft shadow under the window, deeper for the selected one.
-    Rectangle {
-        anchors.fill: parent
-        anchors.margins: -2
-        anchors.topMargin: 3
-        anchors.bottomMargin: -9
-        radius: card.cornerRadius + 4
-        color: "black"
-        opacity: card.selected ? 0.5 : 0.3
-        Behavior on opacity { NumberAnimation { duration: 140 } }
-    }
-
-    WindowPicture {
-        anchors.fill: parent
-        toplevel: card.toplevel
-        iconSource: card.client ? card.iconSource : ""
-        cornerRadius: card.cornerRadius
-        backdrop: Util.withAlpha(Commons.Color.popups.background, 0.9)
-    }
-
-    // Thin, quiet selection ring.
-    Rectangle {
+    ThumbFrame {
         anchors.fill: parent
         radius: card.cornerRadius
-        color: "transparent"
-        border.color: Util.withAlpha(Commons.Color.popups.text, 0.85)
-        border.width: 2
-        opacity: card.selected ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 120 } }
+        emphasized: card.selected
+
+        WindowPicture {
+            anchors.fill: parent
+            toplevel: card.toplevel
+            iconSource: card.client ? card.iconSource : ""
+            cornerRadius: 0
+            backdrop: Util.withAlpha(Commons.Color.popups.background, 0.9)
+        }
     }
 
     // App icon on the bottom edge.

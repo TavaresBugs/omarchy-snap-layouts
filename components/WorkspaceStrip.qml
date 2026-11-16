@@ -50,7 +50,7 @@ Item {
             id: repeater
             model: strip.entries
 
-            Rectangle {
+            Item {
                 id: thumb
                 required property var modelData
                 readonly property bool selected: modelData.id === strip.selectedId
@@ -66,88 +66,91 @@ Item {
                                 return strip.drop.windows[i];
                     return w;
                 }
-                readonly property int inset: 2
 
                 width: Math.round(strip.thumbHeight * strip.aspect)
                 height: strip.thumbHeight
-                radius: 8
-                color: Util.withAlpha(Commons.Color.popups.background, 0.82)
-                border.color: Util.withAlpha(Commons.Color.popups.text, target ? 1 : (selected ? 0.9 : 0.16))
-                border.width: selected || target ? 2 : 1
                 scale: selected || target || mouse.containsMouse ? 1.05 : 1
                 opacity: selected || target || mouse.containsMouse ? 1 : (empty ? 0.55 : 0.88)
                 Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                 Behavior on opacity { NumberAnimation { duration: 120 } }
-                Behavior on border.color { ColorAnimation { duration: 120 } }
 
-                // The windows, at their real positions, with their live picture.
-                Repeater {
-                    model: thumb.modelData.windows
-
-                    WindowPicture {
-                        id: pic
-                        required property var modelData
-                        readonly property var frame: thumb.frameOf(modelData)
-                        x: thumb.inset + frame.x * (thumb.width - 2 * thumb.inset)
-                        y: thumb.inset + frame.y * (thumb.height - 2 * thumb.inset)
-                        width: Math.max(4, frame.w * (thumb.width - 2 * thumb.inset))
-                        height: Math.max(4, frame.h * (thumb.height - 2 * thumb.inset))
-                        Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                        Behavior on y { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                        Behavior on width { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                        Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                        toplevel: strip.toplevelFor(modelData.address)
-                        cornerRadius: 3
-                        backdrop: Util.withAlpha(Commons.Color.background, 0.8)
-                        fallbackIconSize: 0
-                    }
-                }
-
-                // Where the dropped window will land: its slot, filled with its picture.
-                Item {
-                    id: slot
-                    readonly property var rect: strip.drop ? strip.drop.slot : null
-                    visible: thumb.previewing && rect !== null
-                    x: thumb.inset + (rect ? rect.x : 0) * (thumb.width - 2 * thumb.inset)
-                    y: thumb.inset + (rect ? rect.y : 0) * (thumb.height - 2 * thumb.inset)
-                    width: Math.max(4, (rect ? rect.w : 0) * (thumb.width - 2 * thumb.inset))
-                    height: Math.max(4, (rect ? rect.h : 0) * (thumb.height - 2 * thumb.inset))
-
-                    WindowPicture {
-                        anchors.fill: parent
-                        toplevel: strip.dropToplevel
-                        cornerRadius: 3
-                        backdrop: Util.withAlpha(Commons.Color.popups.text, 0.25)
-                        fallbackIconSize: 0
-                        opacity: 0.8
-                    }
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 3
-                        color: Util.withAlpha(Commons.Color.popups.text, 0.18)
-                        border.color: Util.withAlpha(Commons.Color.popups.text, 0.95)
-                        border.width: 1.5
-                    }
-                }
-
-                // Workspace label, as in the bar.
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.bottom: parent.bottom
-                    anchors.margins: 4
-                    width: label.implicitWidth + 10
-                    height: 16
+                ThumbFrame {
+                    anchors.fill: parent
                     radius: 8
-                    color: Util.withAlpha(Commons.Color.background, 0.78)
+                    emphasized: thumb.selected || thumb.target
+                    fill: Util.withAlpha(Commons.Color.popups.background, 0.82)
 
+                    // The windows, at their real positions, with their live picture.
+                    Repeater {
+                        model: thumb.modelData.windows
+
+                        Item {
+                            id: win
+                            required property var modelData
+                            readonly property var placed: thumb.frameOf(modelData)
+                            x: placed.x * thumb.width
+                            y: placed.y * thumb.height
+                            width: Math.max(4, placed.w * thumb.width)
+                            height: Math.max(4, placed.h * thumb.height)
+                            Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                            Behavior on y { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                            Behavior on width { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                            Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+                            WindowPicture {
+                                anchors.fill: parent
+                                toplevel: strip.toplevelFor(win.modelData.address)
+                                cornerRadius: 0
+                                backdrop: Util.withAlpha(Commons.Color.background, 0.8)
+                                fallbackIconSize: 0
+                            }
+                            // A hairline keeps neighbouring windows apart.
+                            Rectangle {
+                                anchors.fill: parent
+                                color: "transparent"
+                                border.width: 1
+                                border.color: Util.withAlpha("black", 0.45)
+                            }
+                        }
+                    }
+
+                    // Where the dropped window will land: its slot, filled with its picture.
+                    Item {
+                        readonly property var rect: strip.drop ? strip.drop.slot : null
+                        visible: thumb.previewing && rect !== null
+                        x: (rect ? rect.x : 0) * thumb.width
+                        y: (rect ? rect.y : 0) * thumb.height
+                        width: Math.max(4, (rect ? rect.w : 0) * thumb.width)
+                        height: Math.max(4, (rect ? rect.h : 0) * thumb.height)
+
+                        WindowPicture {
+                            anchors.fill: parent
+                            toplevel: strip.dropToplevel
+                            cornerRadius: 0
+                            backdrop: Util.withAlpha(Commons.Color.popups.text, 0.25)
+                            fallbackIconSize: 0
+                            opacity: 0.8
+                        }
+                        Rectangle {
+                            anchors.fill: parent
+                            color: Util.withAlpha(Commons.Color.popups.text, 0.18)
+                            border.color: Util.withAlpha(Commons.Color.popups.text, 0.95)
+                            border.width: 1.5
+                        }
+                    }
+
+                    // Workspace number, as in the bar: plain text, no badge.
                     Text {
-                        id: label
-                        anchors.centerIn: parent
+                        anchors.left: parent.left
+                        anchors.bottom: parent.bottom
+                        anchors.margins: 6
                         text: thumb.modelData.label
                         color: Commons.Color.popups.text
                         font.family: Qt.application.font.family
-                        font.pixelSize: Style.font.body - 3
+                        font.pixelSize: Style.font.body - 2
                         font.weight: Font.DemiBold
+                        style: Text.Outline
+                        styleColor: Util.withAlpha("black", 0.6)
                     }
                 }
 

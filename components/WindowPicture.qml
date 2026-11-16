@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Effects
 import Quickshell.Wayland
 
-// A window's picture with rounded corners, falling back to the app icon when
+// A window's picture, with rounded corners when `cornerRadius` is above zero (use
+// zero inside a ThumbFrame, which clips it), falling back to the app icon when
 // the window cannot be captured (minimized, or not yet available).
 //
 // Rounding uses a mask effect, the way Omarchy's own image picker does it; the
@@ -20,7 +21,7 @@ Item {
 
     Item {
         anchors.fill: parent
-        layer.enabled: true
+        layer.enabled: picture.cornerRadius > 0
         layer.smooth: true
         layer.effect: MultiEffect {
             maskEnabled: true

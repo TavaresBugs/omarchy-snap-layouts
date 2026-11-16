@@ -164,7 +164,7 @@ npm test        # unit tests for everything in lib/
 | Folder | Contents |
 |---|---|
 | `lib/` | Pure logic as QML JavaScript libraries: zone geometry, edge targets, monitors, workspace strip, window ordering, overview layout and navigation, options. No Qt objects, tested with node |
-| `components/` | QML views driven by properties and signals: layout picker, snap assist, overview, workspace strip, shared window picture |
+| `components/` | QML views driven by properties and signals: layout picker, snap assist, overview, workspace strip, shared thumbnail frame and window picture |
 | `SnapLayouts.qml` | State machine and Hyprland I/O |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Optional Hyprland config that goes with this plugin (a window limiter and key bindings) is in [extras/hyprland](extras/hyprland/README.md).
