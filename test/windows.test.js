@@ -96,3 +96,21 @@ test("minimized or special targets are not handled here", () => {
     assert.deepEqual(W.floatsCovering(min, [min, claude]), []);
     assert.deepEqual(W.floatsCovering(null, [claude]), []);
 });
+
+test("a window belongs to the workspace it is on", () => {
+    assert.equal(W.belongsToWorkspace(win({ workspace: { id: 11 } }), 11), true);
+    assert.equal(W.belongsToWorkspace(win({ workspace: { id: 1 } }), 11), false);
+});
+
+test("a minimized window belongs to the workspace it was minimized from", () => {
+    const min = (tags) => win({ workspace: { id: -98, name: "special:minimized" }, tags });
+    assert.equal(W.belongsToWorkspace(min(["omarchy-minimized-from-12"]), 12), true);
+    assert.equal(W.belongsToWorkspace(min(["omarchy-minimized-from-12*"]), 12), true);
+    assert.equal(W.belongsToWorkspace(min(["omarchy-minimized-from-12"]), 11), false);
+    assert.equal(W.belongsToWorkspace(min([]), 12), false);
+    assert.equal(W.belongsToWorkspace(min(undefined), 12), false);
+});
+
+test("workspace ids compare as numbers", () => {
+    assert.equal(W.belongsToWorkspace(win({ workspace: { id: "11" } }), 11), true);
+});

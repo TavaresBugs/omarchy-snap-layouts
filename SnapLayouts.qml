@@ -13,6 +13,7 @@ import "lib/edge.js" as Edge
 import "lib/monitors.js" as Monitors
 import "lib/windows.js" as Windows
 import "lib/overview.js" as Overview
+import "lib/settings.js" as Settings
 
 // Windows 11-style snap layouts for floating Hyprland windows.
 //
@@ -79,9 +80,9 @@ Item {
     // Edge/corner snap: hold a dragged window against a screen edge or corner,
     // wait a moment, and a preview of the landing zone fades in. Releasing
     // snaps the window there; moving away cancels.
-    readonly property int edgeMargin: 12
-    readonly property int edgeCorner: 90
-    readonly property int edgeDwellMs: 320
+    readonly property int edgeMargin: root.options.edgeMargin
+    readonly property int edgeCorner: root.options.edgeCorner
+    readonly property int edgeDwellMs: root.options.edgeDwellMs
     property string edgePending: ""
     property double edgePendingAt: 0
 
@@ -137,7 +138,11 @@ Item {
             m = root.monitors[0];
         if (!m)
             return;
-        var list = Windows.sortForOverview(root.clients.filter(Windows.isSnappable));
+        var offered = root.clients.filter(Windows.isSnappable);
+        // Only this workspace's windows by default; mixing every workspace is confusing.
+        var scoped = root.options.overviewScope === "all" ? offered
+            : offered.filter(function(c) { return Windows.belongsToWorkspace(c, m.workspaceId); });
+        var list = Windows.sortForOverview(scoped.length > 0 ? scoped : offered);
         if (list.length === 0)
             return;
         var top = m.reserved[1] + 50;
@@ -506,6 +511,8 @@ Item {
     // Which zone the pointer is asking for, if it is against an edge/corner.
     // Layout 0 = halves, layout 5 = quarters.
     function edgeTarget(m, cur) {
+        if (!root.options.edgeSnap)
+            return null;
         var t = Edge.edgeTarget(m, cur, root.edgeOptions);
         return t ? { layout: Layouts.INDEX[t.layout], zone: t.zone, key: t.key } : null;
     }
@@ -727,6 +734,8 @@ Item {
     readonly property string hookPath: root.pluginDir + "/hook.lua"
     property bool settingsLoaded: false
     property var settingsEntry: null
+    // Validated user options from shell.json (see lib/settings.js).
+    readonly property var options: Settings.resolve(root.settingsEntry)
     // Set by setDragToSnap() so the choice applies before shell.json is rewritten.
     property var dragOverride: null
     readonly property var dragSetting: root.dragOverride !== null ? root.dragOverride
