@@ -126,7 +126,12 @@ Item {
     property string pendingSelect: ""
     // The overview shows the workspace the monitor is showing, so its windows
     // can travel to and from their real places; otherwise they fade.
-    readonly property bool overviewMorph: root.monitor ? root.overviewWorkspace === root.monitor.workspaceId : true
+    readonly property bool overviewMorph: root.closingIntoWorkspace
+        || (root.monitor ? root.overviewWorkspace === root.monitor.workspaceId : true)
+    // The overview is closing because a window, or a workspace, was chosen: the
+    // workspace being looked at is about to be the one on screen, so its windows
+    // travel to their real places instead of just fading where they are.
+    property bool closingIntoWorkspace: false
     // Workspace events caused by the plugin itself (moving, swapping) are not a
     // reason to change what the overview shows.
     property double ignoreWorkspaceUntil: 0
@@ -192,6 +197,7 @@ Item {
         root.placedAddresses = [];
         root.assistPage = 0;
         root.closing = false;
+        root.closingIntoWorkspace = false;
         root.stripFocus = false;
         root.overviewWorkspace = m.workspaceId;
         root.refreshOverview(true);
@@ -356,6 +362,7 @@ Item {
     function goToWorkspace(id) {
         if (root.closing)
             return;
+        root.closingIntoWorkspace = id === root.overviewWorkspace;
         var owner = Workspaces.monitorFor(id, Monitors.indexById(root.monitorsIpc));
         var lua = Dispatch.goToWorkspace(id, Workspaces.slotOf(id), owner ? owner.name : "");
         if (lua !== "")
@@ -448,6 +455,7 @@ Item {
     function focusWindow(address) {
         if (root.closing)
             return;
+        root.closingIntoWorkspace = true;
         var c = root.clientByAddress(address);
         var sel = "address:" + address;
         var lua = [];
@@ -691,6 +699,7 @@ Item {
     function hide() {
         closeAnim.stop();
         root.closing = false;
+        root.closingIntoWorkspace = false;
         root.stripFocus = false;
         root.leaveModal();
         root.mode = "";
