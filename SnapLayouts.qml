@@ -46,8 +46,8 @@ Item {
     readonly property string pluginId: "io.github.n0rthstar88.snap-layouts"
 
     // The system's look, read from Hyprland with every snapshot (lib/style.js):
-    // window rounding, gap to the screen edge and border width.
-    property var style: SystemStyle.resolve(null, null, null)
+    // gap to the screen edge and border width.
+    property var style: SystemStyle.resolve(null, null)
     // innerGap: space between snapped windows (0 = flush, borders touching).
     readonly property int innerGap: 0
     // titleBarHeight must match hyprbars' bar_height. The bar is drawn above
@@ -713,7 +713,7 @@ Item {
 
     Process {
         id: snapshotProc
-        command: ["sh", "-c", "hyprctl -j monitors; printf '\\n@@SNAP@@\\n'; hyprctl -j clients; printf '\\n@@SNAP@@\\n'; hyprctl -j activewindow; printf '\\n@@SNAP@@\\n'; hyprctl -j plugin list; printf '\\n@@SNAP@@\\n'; hyprctl -j getoption decoration:rounding; printf '\\n@@SNAP@@\\n'; hyprctl -j getoption general:gaps_out; printf '\\n@@SNAP@@\\n'; hyprctl -j getoption general:border_size"]
+        command: ["sh", "-c", "hyprctl -j monitors; printf '\\n@@SNAP@@\\n'; hyprctl -j clients; printf '\\n@@SNAP@@\\n'; hyprctl -j activewindow; printf '\\n@@SNAP@@\\n'; hyprctl -j plugin list; printf '\\n@@SNAP@@\\n'; hyprctl -j getoption general:gaps_out; printf '\\n@@SNAP@@\\n'; hyprctl -j getoption general:border_size"]
         stdout: StdioCollector {
             onStreamFinished: {
                 var s = root.parseSections(text);
@@ -727,7 +727,7 @@ Item {
                 root.hasTitleBars = (s[3] || []).some(function(p) {
                     return p.name === "hyprbars";
                 });
-                root.style = SystemStyle.resolve(s[4], s[5], s[6]);
+                root.style = SystemStyle.resolve(s[4], s[5]);
                 if (root.snapshotReason === "picker")
                     root.startPicker();
                 else if (root.snapshotReason === "overview")
@@ -1359,8 +1359,6 @@ Item {
                     morph: root.overviewMorph
                     progress: root.overviewT
                     topInset: root.monitor ? root.monitor.reserved[1] : 0
-                    cornerRadius: root.style.rounding
-                    edgeGap: root.style.outer
                     wallpaper: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/current/background"
                     toplevelFor: root.toplevelFor
                     iconFor: root.iconFor

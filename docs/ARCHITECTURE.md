@@ -57,7 +57,9 @@ Omarchy gives each monitor a block of ten workspaces (monitor 1: 1-10, monitor 2
 
 ## System look
 
-Window rounding, the gap to the screen edge and the border width are read with `hyprctl -j getoption` on every snapshot and resolved by `lib/style.js` (unreadable answers fall back to defaults). Zone geometry uses the gap and border; the overview backdrop (`Backdrop`) uses all three, so it matches whatever the theme sets. Only the gap between snapped windows (`innerGap`, flush) is a plugin choice.
+The gap to the screen edge and the border width are read with `hyprctl -j getoption` on every snapshot and resolved by `lib/style.js` (unreadable answers fall back to defaults); zone geometry and the workspace thumbnails' usable area use them. Only the gap between snapped windows (`innerGap`, flush) is a plugin choice.
+
+The overview backdrop (`Backdrop`) is deliberately not shaped like the windows: it lays the wallpaper over the whole screen the way the desktop does, paints only below the bar, and puts one dim over everything including the bar. Because it matches the real wallpaper pixel for pixel, nothing shows at its edges, so it needs no rounded corners.
 
 ## Layers and notifications
 

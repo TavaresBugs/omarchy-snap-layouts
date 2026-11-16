@@ -19,10 +19,10 @@ Added
 - Key handling for the overview moved to `lib/navigation.js` and is tested.
 
 Fixed
-- The overview backdrop follows the system's look: it reaches the screen edges (so the focused window's border can't show around it) and has the window corner curve, one gap further out. The bar strip is dimmed like the rest of the screen.
+- The overview backdrop is one piece: the wallpaper is laid out over the whole screen exactly as the desktop draws it (so it lines up across the bar), the part below the bar is painted, and a single dim covers everything, bar included. It reaches the screen edges, so the focused window's border can't show around it, and it has no corners of its own to show.
 - Overview cards and workspace thumbnails share one frame (`ThumbFrame`): the same shadow, rounded clipping and a ring drawn above the content, so a picture can no longer spill over the outline. Workspace numbers are plain text instead of a badge.
 - Workspace thumbnails show the usable area (without the bar and edge gap), so tiled windows fill them.
-- (Earlier in this release) the backdrop used the window rounding. Rounding, edge gap and border width are read from Hyprland (`lib/style.js`) instead of being written in the plugin, so a theme change is followed.
+- The edge gap and border width are read from Hyprland (`lib/style.js`) instead of being written in the plugin, so a theme change is followed.
 - Snap assist only offers windows of the workspace being filled.
 - Snapped windows no longer leave a gap at the top on tiled workspaces: the title bar height is only added for windows on floating workspaces.
 - Drag detection recognises tiled windows as well as floating ones.

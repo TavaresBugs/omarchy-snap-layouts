@@ -29,8 +29,6 @@ Item {
     property int topInset: 0            // height of the bar to leave uncovered
     property url wallpaper: ""
     property real dim: 0.55
-    property int cornerRadius: 0        // the system's window rounding
-    property int edgeGap: 0             // the system's gap to the screen edge
 
     // One strip per screen (hidden when empty), the main screen first and big,
     // the others small: [{ name, main, workspaceId, aspect, entries }].
@@ -98,30 +96,17 @@ Item {
             layer.moveRequested(c.address, target);
     }
 
-    // Wallpaper, dimmed: hides the real windows behind the thumbnails. It reaches
-    // the screen edges, so the windows' borders can't show around it, and its
-    // corners are the window corners plus the edge gap, which is the same curve
-    // one gap further out.
+    // Wallpaper, dimmed, over the whole screen (the bar stays visible, dimmed like
+    // the rest). It reaches the edges, so no window border can show around it.
+    // Quick: while the cards are still leaving their windows, the real ones are
+    // already hidden behind it, so they aren't seen twice.
     Backdrop {
-        y: layer.topInset
-        width: layer.width
-        height: layer.height - layer.topInset
-        // Quick: while the cards are still leaving their windows, the real ones
-        // are already hidden behind the wallpaper, so they aren't seen twice.
+        anchors.fill: parent
         opacity: Math.min(1, layer.progress * 3)
+        topInset: layer.topInset
         base: Commons.Color.background
         wallpaper: layer.wallpaper
         dim: layer.dim
-        radius: layer.cornerRadius > 0 ? layer.cornerRadius + layer.edgeGap : 0
-    }
-
-    // The bar keeps its own look, but is dimmed like the rest so it doesn't
-    // sit bright above a dark screen.
-    Rectangle {
-        width: layer.width
-        height: layer.topInset
-        color: "black"
-        opacity: layer.dim * Math.min(1, layer.progress * 3)
     }
 
     // The strips: the main screen big, the others small, always in the same order.

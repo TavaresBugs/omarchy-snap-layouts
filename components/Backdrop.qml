@@ -1,56 +1,51 @@
 import QtQuick
-import QtQuick.Effects
 
-// A dimmed wallpaper that fills its area, with rounded corners when `radius` is
-// above zero so it can match the system's window corners.
+// The dimmed wallpaper behind the overview, as one piece for the whole screen.
+//
+// The wallpaper is laid out over the full screen, exactly as the desktop draws
+// it, and only the part below the bar is painted, so the bar stays untouched
+// and the picture lines up across it. One dim then covers everything, the bar
+// strip included, so there is no seam between the bar and the rest. It has no
+// corners of its own to show: nothing is visible outside it.
 Item {
     id: backdrop
 
     property color base: "black"
     property url wallpaper: ""
     property real dim: 0.55
-    property int radius: 0
+    property int topInset: 0            // height of the bar, left unpainted
 
     Item {
-        anchors.fill: parent
-        layer.enabled: backdrop.radius > 0
-        layer.smooth: true
-        layer.effect: MultiEffect {
-            maskEnabled: true
-            maskSource: roundedMask
-            maskThresholdMin: 0.3
-            maskSpreadAtMin: 0.3
-        }
+        y: backdrop.topInset
+        width: parent.width
+        height: parent.height - backdrop.topInset
+        clip: true
 
-        Rectangle {
-            anchors.fill: parent
-            color: backdrop.base
-        }
+        Item {
+            y: -backdrop.topInset
+            width: backdrop.width
+            height: backdrop.height
 
-        Image {
-            anchors.fill: parent
-            source: backdrop.wallpaper
-            fillMode: Image.PreserveAspectCrop
-            // Decoded before the first frame (cached afterwards), so the wallpaper
-            // can't pop in halfway through an animation.
-            asynchronous: false
-            cache: true
-        }
+            Rectangle {
+                anchors.fill: parent
+                color: backdrop.base
+            }
 
-        Rectangle {
-            anchors.fill: parent
-            color: "black"
-            opacity: backdrop.dim
+            Image {
+                anchors.fill: parent
+                source: backdrop.wallpaper
+                fillMode: Image.PreserveAspectCrop
+                // Decoded before the first frame (cached afterwards), so the
+                // wallpaper can't pop in halfway through an animation.
+                asynchronous: false
+                cache: true
+            }
         }
     }
 
-    // The mask has to be an invisible item with a layer.
     Rectangle {
-        id: roundedMask
         anchors.fill: parent
-        visible: false
-        layer.enabled: true
-        radius: backdrop.radius
         color: "black"
+        opacity: backdrop.dim
     }
 }
