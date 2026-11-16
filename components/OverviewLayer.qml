@@ -3,6 +3,7 @@ import QtQuick
 import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
 import "Util.js" as Util
+import "../lib/motion.js" as Motion
 
 // The window overview (Alt+Tab view): a clean backdrop with every window as a
 // thumbnail. The backdrop starts below the bar, so the bar stays visible.
@@ -26,6 +27,7 @@ Item {
     property real progress: 1           // 0..1, the opening (and closing) animation
     property bool morph: true           // false: the windows fade instead of travelling
     property bool stripFocused: false   // the keyboard is on the workspace strip
+    property var bounds: null           // the area windows can use, in this layer's coordinates
     property int topInset: 0            // height of the bar to leave uncovered
     property url wallpaper: ""
     property real dim: 0.55
@@ -46,14 +48,24 @@ Item {
 
     // The dim is quick (the real windows must be hidden while the cards still sit on
     // them) and eased, so it neither jumps nor lingers.
-    readonly property real dimProgress: {
-        var t = Math.min(1, layer.progress * 1.8);
-        return t * t * (3 - 2 * t);
+    readonly property real dimProgress: Motion.smoothstep(Math.min(1, layer.progress * Motion.TOKENS.dimSpeed))
+
+    // Cards leave their windows in turn, the selected one first.
+    function delayFor(index) {
+        return Motion.staggerDelay(index, layer.rects.length, index === layer.selectedIndex);
     }
 
-    readonly property real stripProgress: {
-        var t = Math.max(0, Math.min(1, (layer.progress - 0.55) / 0.45));
-        return t * t * (3 - 2 * t);
+    // The workspace strip is gone before the first card heading back to its window
+    // would cross it, and returns once they have mostly arrived. This is worked
+    // out from where the windows really are, not from a fixed time.
+    readonly property real stripVisible: {
+        if (!layer.morph)
+            return layer.progress;
+        var delays = [];
+        for (var i = 0; i < layer.rects.length; i++)
+            delays.push(layer.delayFor(i));
+        var clear = Motion.stripClear(layer.rects, layer.topInset + 14 + band.height, delays);
+        return Motion.stripVisibility(layer.progress, clear);
     }
 
     signal select(int index)
@@ -126,12 +138,10 @@ Item {
         id: band
         visible: layer.screens.length > 0
         anchors.horizontalCenter: parent.horizontalCenter
-        // The strip comes in last and leaves first: it drops in from above once the
-        // cards have mostly arrived, and is gone before they head back, so a card
-        // returning to a window that fills the screen never grows under it.
-        y: layer.topInset + 14 - 18 * (1 - layer.stripProgress)
+        // The strip comes in last and leaves first (see stripVisible).
+        y: layer.topInset + 14 - 18 * (1 - layer.stripVisible)
         spacing: 36
-        opacity: layer.stripProgress
+        opacity: layer.stripVisible
         z: 20
 
         Repeater {
@@ -219,7 +229,8 @@ Item {
                 iconSource: client ? layer.iconFor(client) : ""
                 progress: layer.progress
                 morph: layer.morph
-                delay: index === layer.selectedIndex || layer.rects.length < 2 ? 0 : 0.18 * index / (layer.rects.length - 1)
+                delay: layer.delayFor(index)
+                bounds: layer.bounds
                 selected: index === layer.selectedIndex
                 dragged: index === layer.dragIndex
                 onHovered: layer.select(index)

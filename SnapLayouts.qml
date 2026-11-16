@@ -11,6 +11,7 @@ import "components"
 import "lib/layouts.js" as Layouts
 import "lib/edge.js" as Edge
 import "lib/monitors.js" as Monitors
+import "lib/motion.js" as Motion
 import "lib/navigation.js" as Navigation
 import "lib/dispatch.js" as Dispatch
 import "lib/windows.js" as Windows
@@ -140,10 +141,9 @@ Item {
         property: "overviewT"
         from: 0
         to: 1
-        duration: 360
-        // Fast out of the blocks, long soft landing.
+        duration: Motion.TOKENS.open.duration
         easing.type: Easing.BezierSpline
-        easing.bezierCurve: [0.16, 1, 0.3, 1, 1, 1]
+        easing.bezierCurve: Motion.TOKENS.open.curve
     }
     // Closing runs the opening backwards: the windows travel back to their
     // places, and only then does the overview go away.
@@ -152,9 +152,9 @@ Item {
         target: root
         property: "overviewT"
         to: 0
-        duration: 260
+        duration: Motion.TOKENS.close.duration
         easing.type: Easing.BezierSpline
-        easing.bezierCurve: [0.65, 0, 0.35, 1, 1, 1]
+        easing.bezierCurve: Motion.TOKENS.close.curve
         onFinished: root.hide()
     }
 
@@ -213,6 +213,15 @@ Item {
         var byId = Monitors.indexById(root.monitorsIpc);
         root.workspaceScreens = root.options.overviewScope === "all" ? []
             : Workspaces.screens(offered, byId, root.overviewWorkspace, root.mainMonitor, root.style.outer);
+    }
+
+    // The area windows can use on this monitor, in the overlay's own coordinates:
+    // what the bar and docks leave free, less the gap to the screen edge.
+    readonly property var usableBounds: {
+        if (!root.monitor)
+            return null;
+        var a = Workspaces.usableArea(root.monitor, root.style.outer);
+        return { x: a.x - root.monitor.x, y: a.y - root.monitor.y, w: a.w, h: a.h };
     }
 
     // Lay out the windows of overviewWorkspace (or all of them). `first` also
@@ -1432,6 +1441,7 @@ Item {
                     clients: root.candidates
                     selectedIndex: root.stripFocus ? -1 : root.overviewIndex
                     stripFocused: root.stripFocus || root.candidates.length === 0
+                    bounds: root.usableBounds
                     morph: root.overviewMorph
                     progress: root.overviewT
                     topInset: root.monitor ? root.monitor.reserved[1] : 0

@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
 import "Util.js" as Util
+import "../lib/motion.js" as Motion
 
 // One window in the overview: its picture in a ThumbFrame, the app icon sitting
 // on its bottom edge, and the title below it when selected. It knows nothing
@@ -18,12 +19,15 @@ Item {
     // False when the real window isn't on screen (another workspace is being
     // looked at): the card then fades instead of travelling from its place.
     property bool morph: true
-    // Cards leave their windows one after another (a share of the animation, 0..~0.2),
-    // so the selected one leads and the rest follow.
+    // Cards leave their windows one after another, so the selected one leads and
+    // the rest follow (see lib/motion.js).
     property real delay: 0
-    readonly property real travel: morph ? Math.max(0, Math.min(1, (progress - delay) / (1 - delay))) : 1
+    readonly property real travel: morph ? Motion.travel(progress, delay) : 1
     // The icon and title come in only once the card has nearly arrived.
-    readonly property real chrome: morph ? Math.max(0, Math.min(1, (travel - 0.55) / 0.45)) : progress
+    readonly property real chrome: morph ? Motion.clamp01((travel - Motion.TOKENS.chromeFrom) / (1 - Motion.TOKENS.chromeFrom)) : progress
+    // The area windows can use, in this card's coordinates, or null. The selected
+    // card is enlarged and lifted only as far as it has room for inside it.
+    property var bounds: null
 
     property var client: null           // the window's `hyprctl clients` entry
     property var toplevel: null         // its Hyprland toplevel, for the live picture
@@ -49,15 +53,15 @@ Item {
     opacity: (morph ? 1 : progress) * (dragged ? 0.35 : (selected ? 1 : 0.9))
     Behavior on opacity { NumberAnimation { duration: 140 } }
 
-    // The selected card is lifted and a little larger, but only as far as it has
-    // left its window: on the window itself (start and end of the animation) it
-    // must be exactly the window's size, or it overshoots the area the window
-    // fills and the two don't line up.
+    // The selected card is lifted and a little larger, but only as far as the room
+    // around it allows. A card on a window that fills the mosaic has none, so it
+    // is exactly that window's size; with room (in the overview) it gets the full
+    // emphasis. Nothing here depends on the layout.
     property real lift: selected ? 1 : 0
     Behavior on lift { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-    readonly property real emphasis: lift * travel
-    scale: 1 + 0.05 * emphasis
-    transform: Translate { y: -6 * card.emphasis }
+    readonly property var room: Motion.emphasis(x, y, width, height, bounds)
+    scale: 1 + (room.scale - 1) * lift
+    transform: Translate { y: -card.room.lift * card.lift }
 
     ThumbFrame {
         anchors.fill: parent

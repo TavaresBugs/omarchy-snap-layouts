@@ -49,6 +49,8 @@ Hyprland handles shortcuts before the focused surface sees a key, so with the ov
 
 ## Animation
 
+`lib/motion.js` holds the numbers. Matters of taste (durations, curves, stagger, how big a lift) are `TOKENS`, in one place. Everything that depends on the layout is worked out from where things really are: the selected card is enlarged and lifted only as far as the room it has inside the area windows can use (`emphasis`, so a card on a window that fills the mosaic gets none), and the workspace strip is gone before the first card heading back to its window would cross it (`stripClear`, from the windows' real positions). The cards' own start and end are the windows' real rectangles, read when the overview opens.
+
 `overviewT` (0..1) drives both directions: opening runs it up, `close()` runs it back to 0 and only then hides the overview. Cards sit on their real window at 0 and in their place at 1, each starting a little later than the one before it (the selected card leads), with the icon and title fading in only near the end; the strip comes in last and leaves first, so a card returning to a window that fills the screen never grows under it; when the viewed workspace is not the one on screen they fade instead. The backdrop reaches full opacity in the first third, so the real windows are hidden while the cards still sit on them. A workspace change from outside (`workspacev2` event) re-reads the state and slides the new set in; events caused by the plugin's own moves are ignored for a moment.
 
 ## Workspaces
