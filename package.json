@@ -1,0 +1,9 @@
+{
+  "name": "omarchy-snap-layouts",
+  "private": true,
+  "description": "Snap layouts, edge snap and window overview for Omarchy (Hyprland). Only the pure logic in lib/ is tested with node; the UI is QML.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  }
+}
