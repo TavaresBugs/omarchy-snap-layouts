@@ -15,6 +15,7 @@ import "lib/dispatch.js" as Dispatch
 import "lib/windows.js" as Windows
 import "lib/overview.js" as Overview
 import "lib/settings.js" as Settings
+import "lib/style.js" as SystemStyle
 import "lib/workspaces.js" as Workspaces
 
 // Windows 11-style snap layouts for Hyprland windows, plus an Alt+Tab style overview.
@@ -43,13 +44,11 @@ Item {
     property var manifest: null
     readonly property string pluginId: "io.github.n0rthstar88.snap-layouts"
 
-    // outerGap: space between snapped windows and the screen edge.
+    // The system's look, read from Hyprland with every snapshot (lib/style.js):
+    // window rounding, gap to the screen edge and border width.
+    property var style: SystemStyle.resolve(null, null, null)
     // innerGap: space between snapped windows (0 = flush, borders touching).
-    // borderSize must match Hyprland's general.border_size. Hyprland's Lua
-    // config doesn't report these through `hyprctl getoption`, so they are set here.
-    readonly property int outerGap: 2
     readonly property int innerGap: 0
-    readonly property int borderSize: 2
     // titleBarHeight must match hyprbars' bar_height. The bar is drawn above
     // the window's own area, so when hyprbars is loaded windows are placed
     // this much lower to keep the bar inside the zone.
@@ -65,7 +64,7 @@ Item {
     readonly property int pickerCount: Layouts.PICKER_COUNT
 
     // Settings handed to the pure libraries.
-    readonly property var gaps: ({ outer: outerGap, inner: innerGap, border: borderSize })
+    readonly property var gaps: ({ outer: style.outer, inner: innerGap, border: style.border })
     readonly property var cardMetrics: ({ padding: cardPadding, gap: thumbGap, thumbHeight: thumbHeight })
     readonly property var edgeOptions: ({ margin: edgeMargin, corner: edgeCorner })
     readonly property var overviewOptions: ({ gapX: 40, gapY: 62, maxHeightFraction: 0.62 })
@@ -571,7 +570,7 @@ Item {
 
     Process {
         id: snapshotProc
-        command: ["sh", "-c", "hyprctl -j monitors; printf '\\n@@SNAP@@\\n'; hyprctl -j clients; printf '\\n@@SNAP@@\\n'; hyprctl -j activewindow; printf '\\n@@SNAP@@\\n'; hyprctl -j plugin list"]
+        command: ["sh", "-c", "hyprctl -j monitors; printf '\\n@@SNAP@@\\n'; hyprctl -j clients; printf '\\n@@SNAP@@\\n'; hyprctl -j activewindow; printf '\\n@@SNAP@@\\n'; hyprctl -j plugin list; printf '\\n@@SNAP@@\\n'; hyprctl -j getoption decoration:rounding; printf '\\n@@SNAP@@\\n'; hyprctl -j getoption general:gaps_out; printf '\\n@@SNAP@@\\n'; hyprctl -j getoption general:border_size"]
         stdout: StdioCollector {
             onStreamFinished: {
                 var s = root.parseSections(text);
@@ -585,6 +584,7 @@ Item {
                 root.hasTitleBars = (s[3] || []).some(function(p) {
                     return p.name === "hyprbars";
                 });
+                root.style = SystemStyle.resolve(s[4], s[5], s[6]);
                 if (root.snapshotReason === "picker")
                     root.startPicker();
                 else if (root.snapshotReason === "overview")
@@ -1229,6 +1229,8 @@ Item {
                     selectedIndex: root.overviewIndex
                     progress: root.overviewT
                     topInset: root.monitor ? root.monitor.reserved[1] : 0
+                    cornerRadius: root.style.rounding
+                    edgeGap: root.style.outer
                     wallpaper: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/current/background"
                     toplevelFor: root.toplevelFor
                     iconFor: root.iconFor

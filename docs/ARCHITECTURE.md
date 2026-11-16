@@ -47,6 +47,10 @@ Omarchy gives each monitor a block of ten workspaces (monitor 1: 1-10, monitor 2
 
 `OverviewCard` reports a drag (past a small threshold) as scene coordinates; `OverviewLayer` shows a ghost of the window, asks each `WorkspaceStrip` which workspace is under the pointer (`idAt`) and, on release, emits `moveRequested`; while dragging, `dropPreview` (via `previewFor`) feeds the strip under the pointer so it shows the new slot. `SnapLayouts` builds the Lua with `lib/dispatch.js` and sends it through `hyprctl eval`, then re-reads the state and re-lays-out. A workspace that does not exist yet would be created on the window's own monitor, so for an empty slot of another screen `moveToWorkspace` shows the workspace on its owner for a moment and then restores that monitor's view and the focused window.
 
+## System look
+
+Window rounding, the gap to the screen edge and the border width are read with `hyprctl -j getoption` on every snapshot and resolved by `lib/style.js` (unreadable answers fall back to defaults). Zone geometry uses the gap and border; the overview backdrop (`Backdrop`) uses all three, so it matches whatever the theme sets. Only the gap between snapped windows (`innerGap`, flush) is a plugin choice.
+
 ## Layers and notifications
 
 Notifications live on the Overlay layer. The overview uses the Top layer so notifications stay above it, except when the active window is fullscreen, which hides the Top layer; there it falls back to Overlay.

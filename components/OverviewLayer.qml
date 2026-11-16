@@ -27,6 +27,8 @@ Item {
     property int topInset: 0            // height of the bar to leave uncovered
     property url wallpaper: ""
     property real dim: 0.55
+    property int cornerRadius: 0        // the system's window rounding
+    property int edgeGap: 0             // the system's gap to the screen edge
 
     // One strip per screen (hidden when empty), the main screen first and big,
     // the others small: [{ name, main, workspaceId, aspect, entries }].
@@ -92,30 +94,19 @@ Item {
             layer.moveRequested(c.address, target);
     }
 
-    // Wallpaper, dimmed: hides the real windows behind the thumbnails.
-    Item {
-        anchors.fill: parent
-        anchors.topMargin: layer.topInset
+    // Wallpaper, dimmed: hides the real windows behind the thumbnails. It covers
+    // exactly where windows can be (below the bar, inside the edge gap) and has
+    // the same rounded corners.
+    Backdrop {
+        x: layer.edgeGap
+        y: layer.topInset + layer.edgeGap
+        width: layer.width - 2 * layer.edgeGap
+        height: layer.height - layer.topInset - 2 * layer.edgeGap
         opacity: layer.progress
-
-        Rectangle {
-            anchors.fill: parent
-            color: Commons.Color.background
-        }
-
-        Image {
-            anchors.fill: parent
-            source: layer.wallpaper
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            cache: true
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            color: "black"
-            opacity: layer.dim
-        }
+        base: Commons.Color.background
+        wallpaper: layer.wallpaper
+        dim: layer.dim
+        radius: layer.cornerRadius
     }
 
     // The strips: the main screen big, the others small, always in the same order.
