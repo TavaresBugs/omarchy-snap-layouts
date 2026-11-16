@@ -7,6 +7,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
+import "components"
 import "lib/layouts.js" as Layouts
 import "lib/edge.js" as Edge
 import "lib/monitors.js" as Monitors
@@ -1052,168 +1053,19 @@ Item {
                 }
 
                 // ----- Window overview -----
-                // No panel and no heavy selection: a clean backdrop, each window
-                // near its real position, and a thin ring on the selected one.
-                Item {
-                    id: overviewLayer
+                OverviewLayer {
                     anchors.fill: parent
                     visible: root.mode === "overview"
-
-                    // Clean backdrop: the wallpaper, dimmed, hiding the real windows.
-                    // It starts under the bar, so the bar stays visible and usable.
-                    Item {
-                        anchors.fill: parent
-                        anchors.topMargin: root.monitor ? root.monitor.reserved[1] : 0
-                        opacity: root.overviewT
-
-                        Rectangle {
-                            anchors.fill: parent
-                            color: Commons.Color.background
-                        }
-
-                        Image {
-                            anchors.fill: parent
-                            source: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/current/background"
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            cache: true
-                        }
-
-                        Rectangle {
-                            anchors.fill: parent
-                            color: "black"
-                            opacity: 0.55
-                        }
-                    }
-
-                    Repeater {
-                        model: root.mode === "overview" ? root.overviewRects.length : 0
-
-                        Item {
-                            id: ocard
-                            required property int index
-                            readonly property var rc: root.overviewRects[index]
-                            readonly property var cl: root.candidates[index]
-                            readonly property bool selected: index === root.overviewIndex
-                            x: rc ? rc.rx + (rc.x - rc.rx) * root.overviewT : 0
-                            y: rc ? rc.ry + (rc.y - rc.ry) * root.overviewT : 0
-                            width: rc ? rc.rw + (rc.w - rc.rw) * root.overviewT : 0
-                            height: rc ? rc.rh + (rc.h - rc.rh) * root.overviewT : 0
-                            z: selected ? 10 : 0
-                            opacity: selected ? 1 : 0.9
-                            scale: selected ? 1.05 : 1
-                            Behavior on opacity { NumberAnimation { duration: 140 } }
-                            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-                            transform: Translate {
-                                y: ocard.selected ? -6 : 0
-                                Behavior on y { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-                            }
-
-                            // Soft shadow under the window, deeper for the selected one.
-                            Rectangle {
-                                anchors.fill: parent
-                                anchors.margins: -2
-                                anchors.topMargin: 3
-                                anchors.bottomMargin: -9
-                                radius: 14
-                                color: "black"
-                                opacity: ocard.selected ? 0.5 : 0.3
-                                Behavior on opacity { NumberAnimation { duration: 140 } }
-                            }
-
-                            Item {
-                                id: oshot
-                                anchors.fill: parent
-                                layer.enabled: true
-                                layer.smooth: true
-                                layer.effect: MultiEffect {
-                                    maskEnabled: true
-                                    maskSource: omask
-                                    maskThresholdMin: 0.3
-                                    maskSpreadAtMin: 0.3
-                                }
-
-                                Rectangle {
-                                    anchors.fill: parent
-                                    color: root.withAlpha(Commons.Color.popups.background, 0.9)
-                                }
-
-                                ScreencopyView {
-                                    id: opreview
-                                    readonly property var source: ocard.cl ? root.toplevelFor(ocard.cl.address) : null
-                                    anchors.fill: parent
-                                    captureSource: source && source.wayland ? source.wayland : null
-                                    live: false
-                                    paintCursor: false
-                                }
-                            }
-
-                            Rectangle {
-                                id: omask
-                                anchors.fill: parent
-                                visible: false
-                                layer.enabled: true
-                                radius: 10
-                                color: "black"
-                            }
-
-                            // Thin, quiet selection ring.
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: 10
-                                color: "transparent"
-                                border.color: root.withAlpha(Commons.Color.popups.text, 0.85)
-                                border.width: 2
-                                opacity: ocard.selected ? 1 : 0
-                                Behavior on opacity { NumberAnimation { duration: 120 } }
-                            }
-
-                            // Minimized or uncapturable windows show their icon.
-                            Image {
-                                anchors.centerIn: parent
-                                visible: !opreview.hasContent && ocard.cl
-                                width: Math.min(56, parent.height * 0.5)
-                                height: width
-                                source: ocard.cl ? root.iconFor(ocard.cl) : ""
-                                sourceSize.width: 112
-                                sourceSize.height: 112
-                            }
-
-                            // App icon on the bottom edge, as in Zorin.
-                            Image {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                y: parent.height - height * 0.5
-                                width: 40
-                                height: 40
-                                source: ocard.cl ? root.iconFor(ocard.cl) : ""
-                                sourceSize.width: 80
-                                sourceSize.height: 80
-                            }
-
-                            // Title, only for the selected window.
-                            Text {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                y: parent.height + 24
-                                width: Math.max(parent.width, 200)
-                                horizontalAlignment: Text.AlignHCenter
-                                text: ocard.cl ? String(ocard.cl.title || ocard.cl.class || "") : ""
-                                color: root.withAlpha(Commons.Color.popups.text, 0.9)
-                                font.family: Qt.application.font.family
-                                font.pixelSize: Style.font.body
-                                elide: Text.ElideRight
-                                opacity: ocard.selected ? 1 : 0
-                                Behavior on opacity { NumberAnimation { duration: 120 } }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onEntered: root.overviewIndex = ocard.index
-                                onClicked: root.focusWindow(ocard.cl.address)
-                            }
-                        }
-                    }
+                    rects: root.overviewRects
+                    clients: root.candidates
+                    selectedIndex: root.overviewIndex
+                    progress: root.overviewT
+                    topInset: root.monitor ? root.monitor.reserved[1] : 0
+                    wallpaper: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/current/background"
+                    toplevelFor: root.toplevelFor
+                    iconFor: root.iconFor
+                    onSelect: function(index) { root.overviewIndex = index; }
+                    onActivated: function(address) { root.focusWindow(address); }
                 }
 
                 // ----- Layout picker card -----
