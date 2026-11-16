@@ -34,7 +34,7 @@ The screenshots show the plugin running in Omarchy's real shell.
 Plugins run as unsandboxed code inside your shell, so read the code first if you don't know the source. Then run:
 
 ```sh
-omarchy plugin add https://github.com/n0rthstar88/omarchy-snap-layouts --enable
+omarchy plugin add https://github.com/TavaresBugs/omarchy-snap-layouts --enable
 ```
 
 The first time it loads, a prompt asks whether to keep drag-to-snap on.

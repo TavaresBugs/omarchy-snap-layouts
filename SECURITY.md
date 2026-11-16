@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please don't report security problems in a public issue. Use GitHub's [private vulnerability reporting](https://github.com/n0rthstar88/omarchy-snap-layouts/security/advisories/new) instead, with steps to reproduce and the version or commit you tested.
+Please don't report security problems in a public issue. Use GitHub's [private vulnerability reporting](https://github.com/TavaresBugs/omarchy-snap-layouts/security/advisories/new) instead, with steps to reproduce and the version or commit you tested.
 
 This is a volunteer project, so replies are best-effort and there is no guaranteed response time.
 

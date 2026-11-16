@@ -6,8 +6,8 @@
   "author": "n0rthstar88",
   "license": "MIT",
   "description": "Snap layouts for floating windows: drag to the top, an edge or a corner, or press a shortcut, pick a zone, then pick which windows fill the rest. Also an Alt+Tab style window overview.",
-  "homepage": "https://github.com/n0rthstar88/omarchy-snap-layouts",
-  "repository": "https://github.com/n0rthstar88/omarchy-snap-layouts",
+  "homepage": "https://github.com/TavaresBugs/omarchy-snap-layouts",
+  "repository": "https://github.com/TavaresBugs/omarchy-snap-layouts",
   "keywords": [
     "windows",
     "snap",
