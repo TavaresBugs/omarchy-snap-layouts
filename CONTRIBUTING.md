@@ -13,7 +13,7 @@ omarchy plugin enable io.github.n0rthstar88.snap-layouts
 omarchy restart shell
 ```
 
-Copy your changes across (`SnapLayouts.qml`, `overview-mode.lua`, and the `lib/` and `components/` folders) and **restart the shell with `omarchy restart shell` after each change**. The shell reloads a changed plugin by itself, but a hot reload can leave an older instance running next to the new one, and the symptoms (an overview that does not open, keys that do nothing) look like bugs in your change.
+Copy your changes across (`SnapLayouts.qml`, and the `lib/`, `lua/`, `components/` and `controllers/` folders, plus `BarWidget.qml`, `Panel.qml`, `manifest.json` and `i18n/` if you changed them) and **restart the shell with `omarchy restart shell` after each change**. The shell reloads a changed plugin by itself, but a hot reload can leave an older instance running next to the new one, and the symptoms (an overview that does not open, keys that do nothing) look like bugs in your change.
 
 Run `npm test` and `omarchy plugin validate .` before opening a pull request.
 
@@ -38,8 +38,8 @@ Avoid numbers that depend on one layout. If a value can be worked out from where
 
 ## Hyprland crash to avoid
 
-Never call `remove()` on the mouse binds in `hook.lua`. In Hyprland 0.56.2, `Keybind:remove()` deletes every bind on the same key and leaves the other handles dangling, and the next call on one of those crashes Hyprland. The binds are only ever added, and the plugin ignores their events when drag-to-snap is off.
+Never call `remove()` on the mouse binds in `lua/hook.lua`. In Hyprland 0.56.2, `Keybind:remove()` deletes every bind on the same key and leaves the other handles dangling, and the next call on one of those crashes Hyprland. The binds are only ever added, and the plugin ignores their events when Snapping is off.
 
 ## Changing the overview's shortcuts
 
-`overview-mode.lua` defines a Hyprland submap, and Hyprland keeps a submap's binds until the config is reloaded. When you change the binds in it, bump `VERSION` at the top, so the new definition gets a new name and is used at once instead of being skipped or added twice.
+`lua/overview-mode.lua` defines a Hyprland submap, and Hyprland keeps a submap's binds until the config is reloaded. When you change the binds in it, bump `VERSION` at the top, so the new definition gets a new name and is used at once instead of being skipped or added twice.

@@ -1,0 +1,14 @@
+{
+  "layout.workspaceMosaic": "Layout da área de trabalho definido como WinSaico",
+  "layout.defaultMosaic": "Layout padrão definido como WinSaico",
+  "panel.winsaico.on": "Ligado aqui",
+  "panel.winsaico.off": "Desligado aqui",
+  "panel.winsaico.hint": "Janelas livres que dividem a tela",
+  "panel.autofit": "Ajuste automático",
+  "panel.autofit.on": "As janelas seguem o mosaico",
+  "panel.autofit.off": "Janelas novas abrem no centro, livres",
+  "panel.overview": "Alt+Tab",
+  "panel.overview.hint": "Visão geral das janelas e faixa de áreas",
+  "panel.snap": "Encaixe",
+  "panel.snap.hint": "Arraste para o topo, uma borda ou um canto"
+}

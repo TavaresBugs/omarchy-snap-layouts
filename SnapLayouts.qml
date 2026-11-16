@@ -8,12 +8,16 @@ import Quickshell.Wayland
 import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
 import "components"
+import "controllers"
 import "lib/layouts.js" as Layouts
 import "lib/edge.js" as Edge
 import "lib/monitors.js" as Monitors
 import "lib/motion.js" as Motion
 import "lib/navigation.js" as Navigation
+import "lib/autosnap.js" as AutoSnap
 import "lib/dispatch.js" as Dispatch
+import "lib/hyprctl.js" as Hyprctl
+import "lib/mode.js" as Mode
 import "lib/windows.js" as Windows
 import "lib/overview.js" as Overview
 import "lib/settings.js" as Settings
@@ -21,25 +25,29 @@ import "lib/shortcuts.js" as Shortcuts
 import "lib/style.js" as SystemStyle
 import "lib/workspaces.js" as Workspaces
 
-// Windows 11-style snap layouts for Hyprland windows, plus an Alt+Tab style overview.
+// The plugin's overlay: snap layouts for Hyprland windows (the picker, dragging to the
+// top, an edge or a corner, and snap assist), and an Alt+Tab style window overview.
+// WinSaico, the third product, is controllers/WinSaico.qml; the options and the lists
+// of WinSaico workspaces are read by controllers/Store.qml, for this file and for the
+// bar button alike.
 //
 // Ways in:
-//   - Super+Z (Hyprland event "io.github.n0rthstar88.snap-layouts:toggle") opens the layout
-//     picker for the focused window.
+//   - Super+Z, if given (Hyprland event "io.github.n0rthstar88.snap-layouts:toggle"),
+//     opens the layout picker for the focused window.
 //   - Dragging a window to the top edge of a screen shows the same picker;
 //     releasing over a zone snaps the window there. The plugin installs the
-//     mouse binds for this itself (hook.lua); see "Drag-to-snap setting".
+//     mouse binds for this itself (lua/hook.lua); see "Options and binds".
 //   - Dragging against a side edge or a corner (or the very top) shows a preview
 //     of a half, a quarter or the whole usable area; releasing snaps there.
-//   - "...:overview" (for example on Alt+Tab) opens the window overview.
-//   - omarchy-shell snaplayouts toggle | overview
+//   - "...:overview" (Alt+Tab) opens the window overview.
+//   - omarchy-shell snaplayouts toggle | overview | product | layout | uninstall
 //
 // After the first window is placed, "snap assist" offers the other open
 // windows for each remaining zone of the chosen layout.
 //
 // Structure: decisions live in lib/ (pure JS, unit tested), views in components/,
-// and this file keeps the state machine and the Hyprland I/O. See
-// docs/ARCHITECTURE.md.
+// non-visual concerns in controllers/, and this file keeps the state machine and the
+// Hyprland I/O. See docs/ARCHITECTURE.md.
 Item {
     id: root
 
@@ -119,7 +127,7 @@ Item {
     // The overview is playing its closing animation.
     property bool closing: false
     // The system's shortcuts are paused while the overview is open (see
-    // overview-mode.lua); this remembers that we asked, and when.
+    // lua/overview-mode.lua); this remembers that we asked, and when.
     property bool modal: false
     property double modalSince: 0
     // A window to select again after the next refresh (it moved).
@@ -176,7 +184,7 @@ Item {
     function toggleOverview() {
         if (root.mode === "overview")
             root.close();
-        else if (!root.opened)
+        else if (!root.opened && root.overviewOn)
             root.requestSnapshot("overview");
     }
 
@@ -280,11 +288,11 @@ Item {
     function enterModal() {
         root.modal = true;
         root.modalSince = Date.now();
-        // The key that closes it is the overviewShortcut option, if set (see overview-mode.lua).
-        var exit = root.options.overviewShortcut;
+        // The key that closes it is the overview's own key (see lua/overview-mode.lua).
+        var exit = Settings.overviewKey(root.options);
         Quickshell.execDetached(["hyprctl", "eval", "snap_layouts_overview_shortcut = "
             + (exit !== "" ? JSON.stringify(exit) : "nil")
-            + "; dofile(" + JSON.stringify(root.pluginDir + "/overview-mode.lua") + ")"]);
+            + "; dofile(" + JSON.stringify(root.pluginDir + "/lua/overview-mode.lua") + ")"]);
     }
 
     function leaveModal() {
@@ -669,13 +677,13 @@ Item {
     function toggle() {
         if (root.opened)
             root.close();
-        else
+        else if (root.snapOn)
             root.requestSnapshot("picker");
     }
 
     // Shell overlay contract (omarchy-shell shell summon io.github.n0rthstar88.snap-layouts).
     function open(payload) {
-        if (!root.opened)
+        if (!root.opened && root.snapOn)
             root.requestSnapshot("picker");
     }
 
@@ -778,25 +786,12 @@ Item {
             snapshotProc.running = true;
     }
 
-    function parseSections(text) {
-        var parts = String(text).split("\n@@SNAP@@\n");
-        var out = [];
-        for (var i = 0; i < parts.length; i++) {
-            try {
-                out.push(JSON.parse(parts[i]));
-            } catch (e) {
-                out.push(null);
-            }
-        }
-        return out;
-    }
-
     Process {
         id: snapshotProc
         command: ["sh", "-c", "hyprctl -j monitors; printf '\\n@@SNAP@@\\n'; hyprctl -j clients; printf '\\n@@SNAP@@\\n'; hyprctl -j activewindow; printf '\\n@@SNAP@@\\n'; hyprctl -j plugin list; printf '\\n@@SNAP@@\\n'; hyprctl -j getoption general:gaps_out; printf '\\n@@SNAP@@\\n'; hyprctl -j getoption general:border_size"]
         stdout: StdioCollector {
             onStreamFinished: {
-                var s = root.parseSections(text);
+                var s = Hyprctl.parseSections(text);
                 root.monitorsIpc = s[0] || [];
                 var mons = [];
                 for (var i = 0; i < root.monitorsIpc.length; i++)
@@ -831,7 +826,7 @@ Item {
         id: pollProc
         command: ["sh", "-c", "hyprctl -j clients; printf '\\n@@SNAP@@\\n'; hyprctl -j cursorpos"]
         stdout: StdioCollector {
-            onStreamFinished: root.handleDragSample(root.parseSections(text))
+            onStreamFinished: root.handleDragSample(Hyprctl.parseSections(text))
         }
     }
 
@@ -863,7 +858,7 @@ Item {
     // Which zone the pointer is asking for, if it is against an edge/corner.
     // Layout 0 = halves, layout 5 = quarters.
     function edgeTarget(m, cur) {
-        if (!root.options.edgeSnap)
+        if (!root.snapOn)
             return null;
         var t = Edge.edgeTarget(m, cur, root.edgeOptions);
         return t ? { layout: Layouts.INDEX[t.layout], zone: t.zone, key: t.key } : null;
@@ -962,7 +957,7 @@ Item {
     }
 
     function handlePress() {
-        if (!root.dragEnabled || root.mode === "picker" || root.mode === "assist")
+        if (!root.snapOn || root.mode === "picker" || root.mode === "assist")
             return;
         root.buttonDown = true;
         root.dragging = false;
@@ -1028,7 +1023,27 @@ Item {
                 }
                 return;
             }
+            if (event && event.name === "openwindow") {
+                // ADDRESS,WORKSPACE,CLASS,TITLE
+                var opened = String(event.data).split(",");
+                winsaico.mosaicCheck(parseInt(opened[1]));
+                winsaico.fitNotice(opened[0], opened[1]);
+                return;
+            }
+            if (event && event.name === "movewindowv2") {
+                // ADDRESS,WORKSPACEID,WORKSPACENAME
+                var moved = String(event.data).split(",");
+                winsaico.fitNotice(moved[0], moved[1]);
+                return;
+            }
+            if (event && event.name === "closewindow") {
+                // Only a window the plugin placed leaves a gap to close.
+                if (winsaico.placed("0x" + String(event.data).split(",")[0]))
+                    winsaico.fitSoon();
+                return;
+            }
             if (event && event.name === "workspacev2") {
+                winsaico.mosaicCheck(parseInt(event.data));
                 if (root.mode === "overview" && !root.closing && Date.now() > root.ignoreWorkspaceUntil)
                     root.followWorkspace(parseInt(event.data));
                 return;
@@ -1039,6 +1054,12 @@ Item {
                 root.toggle();
             else if (event.data === "io.github.n0rthstar88.snap-layouts:overview")
                 root.toggleOverview();
+            else if (event.data === "io.github.n0rthstar88.snap-layouts:layout-next")
+                winsaico.layoutAction("next");
+            else if (event.data === "io.github.n0rthstar88.snap-layouts:layout-back")
+                winsaico.layoutAction("back");
+            else if (event.data === "io.github.n0rthstar88.snap-layouts:autofit-toggle")
+                winsaico.setAutoFit(!root.options.autoFit);
             else if (event.data.indexOf("io.github.n0rthstar88.snap-layouts:swap-") === 0)
                 root.overviewSwap(event.data.substring("io.github.n0rthstar88.snap-layouts:swap-".length));
             // Title-bar drags (hyprbars) swallow the mouse button, so the
@@ -1074,10 +1095,12 @@ Item {
             return "ok";
         }
         // Set a shortcut the plugin binds for you: `shortcut picker "SUPER + Z"`,
-        // `shortcut overview "ALT + TAB"`; `off` removes it.
+        // `shortcut overview "ALT + TAB"`, `shortcut layout "SUPER + L"`, `shortcut
+        // layoutBack "SUPER + ALT + L"` and `shortcut autoFit "<keys>"`; `off` removes it
+        // (the layout and overview keys then go back to their defaults).
         function shortcut(name: string, keys: string): string {
-            if (name !== "picker" && name !== "overview")
-                return "expected picker or overview";
+            if (["picker", "overview", "layout", "layoutBack", "autoFit"].indexOf(name) === -1)
+                return "expected picker, overview, layout, layoutBack or autoFit";
             var spec = keys.trim();
             if (spec === "off")
                 spec = "";
@@ -1088,13 +1111,65 @@ Item {
             return spec === "" ? name + " shortcut removed"
                 : name + " shortcut set to " + spec + " (anything else bound to those keys is replaced while the plugin runs)";
         }
-        // Drag-to-snap: `drag on`, `drag off`, or `drag status`.
-        function drag(state: string): string {
-            if (state === "on" || state === "off")
-                root.setDragToSnap(state === "on");
-            else if (state !== "status")
-                return "expected on, off, or status";
-            return root.dragEnabled ? "on" : "off";
+        // The three products, each with a switch: `product winsaico on`, `product overview
+        // off`, `product snap toggle`, or `status` for the current state of one.
+        function product(name: string, state: string): string {
+            var current = { winsaico: root.options.winsaico, overview: root.options.overview, snap: root.options.snap }[name];
+            if (current === undefined)
+                return "expected winsaico, overview or snap";
+            if (state === "status")
+                return name + " " + (current ? "on" : "off");
+            if (state !== "on" && state !== "off" && state !== "toggle")
+                return "expected on, off, toggle or status";
+            var want = state === "toggle" ? !current : state === "on";
+            if (!root.setProduct(name, want))
+                return "could not save the choice";
+            return name + " " + (want ? "on" : "off");
+        }
+        // The workspace's layout, the way Super+L sets it: `layout next` or `back`, or
+        // a mode by name: tiling, scrolling, floating or winsaico.
+        function layout(action: string): string {
+            var names = { next: "next", back: "back", tiling: "dwindle", scrolling: "scrolling", floating: "floating", mosaic: "mosaic", winsaico: "mosaic" };
+            if (!names[action])
+                return "expected next, back, tiling, scrolling, floating or winsaico";
+            // Choosing WinSaico turns the product on; any other mode needs it on already.
+            if (!root.options.winsaico) {
+                if (names[action] !== "mosaic")
+                    return "WinSaico is off";
+                root.setProduct("winsaico", true);
+            }
+            winsaico.layoutAction(names[action]);
+            return "ok";
+        }
+        // The default layout of workspaces that have none of their own, as Appearance >
+        // Workspace Layout sets it: tiling, scrolling, floating or winsaico.
+        function defaultLayout(name: string): string {
+            var mode = name === "winsaico" ? "mosaic" : name;
+            if (!root.options.winsaico && mode === "mosaic")
+                root.setProduct("winsaico", true);
+            return winsaico.setDefault(mode) ? "ok" : "expected tiling, scrolling, floating or winsaico";
+        }
+        // Auto-fit in WinSaico: `autofit on`, `off`, `toggle` or `status`. Turning it
+        // on fits the windows of the mosaic workspaces at once.
+        function autofit(state: string): string {
+            if (state === "on" || state === "off" || state === "toggle") {
+                var want = state === "toggle" ? !root.options.autoFit : state === "on";
+                if (!winsaico.setAutoFit(want))
+                    return "could not save the choice";
+                return "auto-fit " + (want ? "on" : "off");
+            }
+            if (state !== "status")
+                return "expected on, off, toggle or status";
+            return "auto-fit " + (root.options.autoFit ? "on" : "off");
+        }
+        // Take the plugin out of the system before it is removed: every product off (so
+        // the keys it bound go back at the next reload), WinSaico's rows out of the menu,
+        // and the lists it keeps in Omarchy's state folder forgotten. Then `omarchy plugin
+        // remove`. Windows WinSaico floated stay where they are.
+        function uninstall(): string {
+            store.save({ winsaico: false, overview: false, snap: false });
+            Quickshell.execDetached(["sh", "-c", Dispatch.forgetCommand(store.stateDir)]);
+            return "off: the keys come back at the next reload; now run: omarchy plugin remove " + root.pluginId;
         }
         // Pick a zone in the open picker, e.g. `choose 0 0` = left half.
         function choose(layout: int, zone: int): string {
@@ -1107,44 +1182,81 @@ Item {
         }
     }
 
-    // ---------- Drag-to-snap setting ----------
+    // ---------- The plugin's three products ----------
+    //
+    // WinSaico (a workspace mode, with auto-fit) is controllers/WinSaico.qml. The other
+    // two are here: Snapping (the picker, dragging to the top, an edge or a corner) and
+    // Alt+Tab (the window overview). Each has a switch of its own in the options.
 
-    // Saved in ~/.config/omarchy/shell.json as { "id": "io.github.n0rthstar88.snap-layouts",
-    // "dragToSnap": true|false }. Missing means the user hasn't chosen yet:
-    // drag-to-snap starts on and a one-time prompt asks whether to keep it.
+    // What both entry points read: the options and the lists of WinSaico workspaces.
+    Store {
+        id: store
+        shell: root.shell
+        onLoadedChanged: if (loaded) root.settingsReady()
+    }
+
+    // WinSaico's rows in Omarchy's Appearance > Workspace Layout menu, while it is on.
+    MenuRows {
+        wanted: root.options.winsaico
+        ready: store.loaded
+    }
+
+    WinSaico {
+        id: winsaico
+        enabled: root.options.winsaico
+        store: store
+        shell: root.shell
+        pluginDir: root.pluginDir
+        innerGap: root.innerGap
+    }
+
+    // ---------- Options and binds ----------
+
+    // The options (shell.json, validated by lib/settings.js) are read by the store,
+    // which the bar button reads too. The three products each have a switch:
+    // `winsaico`, `overview` (Alt+Tab) and `snap`.
+    readonly property var options: store.options
+    readonly property bool snapOn: root.options.snap
+    readonly property bool overviewOn: root.options.overview
+    readonly property string mainMonitor: root.options.mainMonitor
+
     readonly property string pluginDir: String((root.manifest && root.manifest.__sourceDir)
         || (Quickshell.env("HOME") + "/.config/omarchy/plugins/" + root.pluginId))
-    readonly property string hookPath: root.pluginDir + "/hook.lua"
-    property bool settingsLoaded: false
-    property var settingsEntry: null
-    // Validated user options from shell.json (see lib/settings.js).
-    readonly property var options: Settings.resolve(root.settingsEntry)
-    // The main screen of the overview strip: a choice made in the overview applies
-    // at once, before shell.json has been rewritten.
-    property string mainOverride: ""
-    readonly property string mainMonitor: root.mainOverride !== "" ? root.mainOverride : root.options.mainMonitor
-    // Set by setDragToSnap() so the choice applies before shell.json is rewritten.
-    property var dragOverride: null
-    readonly property var dragSetting: root.dragOverride !== null ? root.dragOverride
-        : (root.settingsEntry && typeof root.settingsEntry.dragToSnap === "boolean"
-            ? root.settingsEntry.dragToSnap : null)
-    readonly property bool dragEnabled: root.dragSetting !== false
-    readonly property bool askAboutDrag: root.settingsLoaded && root.dragSetting === null
+    readonly property string hookPath: root.pluginDir + "/lua/hook.lua"
     readonly property string bindDescription: "io.github.n0rthstar88.snap-layouts drag"
     readonly property var dragButtons: ["mouse:272", "mouse:273"]
 
-    onDragEnabledChanged: root.ensureDragBinds()
-    onSettingsLoadedChanged: {
+    // Switch a product on or off: "winsaico", "overview" or "snap".
+    function setProduct(name, on) {
+        if (["winsaico", "overview", "snap"].indexOf(name) === -1)
+            return false;
+        var change = {};
+        change[name] = on;
+        return store.save(change);
+    }
+
+    onSnapOnChanged: {
+        if (!root.snapOn && (root.mode === "picker" || root.mode === "assist"))
+            root.close();
         root.ensureDragBinds();
-        root.ensureShortcutBinds();
+    }
+    onOverviewOnChanged: {
+        if (!root.overviewOn && root.mode === "overview")
+            root.close();
     }
     onOptionsChanged: root.ensureShortcutBinds()
 
+    function settingsReady() {
+        root.ensureDragBinds();
+        root.ensureShortcutBinds();
+        winsaico.ensureHook();
+    }
+
     // Adds the drag binds for any button that lacks them. Binds are only ever
-    // added, never removed (see hook.lua for why). When drag-to-snap is off
+    // added, never removed (see lua/hook.lua for why). When Snapping is off
     // they stay put and handlePress() ignores them.
     function ensureDragBinds() {
-        if (!root.settingsLoaded || !root.dragEnabled)
+        if (!store.loaded || !root.snapOn)
             return;
         if (!bindsProc.running)
             bindsProc.running = true;
@@ -1178,7 +1290,7 @@ Item {
                     if (!press || !release)
                         missing.push(root.dragButtons[i]);
                 }
-                if (missing.length === 0 || !root.dragEnabled)
+                if (missing.length === 0 || !root.snapOn)
                     return;
                 Quickshell.execDetached(["hyprctl", "eval", "snap_layouts_buttons = "
                     + JSON.stringify(missing).replace("[", "{").replace("]", "}")
@@ -1187,15 +1299,17 @@ Item {
         }
     }
 
-    // ---- The plugin's own shortcuts (pickerShortcut, overviewShortcut) ----
+    // ---- The plugin's shortcuts ----
+    //
+    // The layout keys (WinSaico), the overview's key and the picker's, when set. Each
+    // product that is on binds its keys; one that is off binds none, so Omarchy's own
+    // come back. See lib/shortcuts.js for what is bound, left alone, or needs a reload.
 
     property var warnedShortcuts: ({})
     property double lastShortcutReload: 0
 
-    // Bind the shortcuts set in the options, if they are not bound yet. See
-    // lib/shortcuts.js for what is bound, left alone, or needs a reload.
     function ensureShortcutBinds() {
-        if (!root.settingsLoaded)
+        if (!store.loaded)
             return;
         if (!shortcutsProc.running)
             shortcutsProc.running = true;
@@ -1213,7 +1327,7 @@ Item {
                     console.warn(root.pluginId + ": could not read hyprctl binds: " + e);
                     return;
                 }
-                var plan = Shortcuts.plan(binds, { picker: root.options.pickerShortcut, overview: root.options.overviewShortcut });
+                var plan = Shortcuts.plan(binds, Settings.wantedShortcuts(root.options, Shortcuts.layoutKeys(binds)));
                 plan.skipped.forEach(function(item) {
                     var key = item.name + item.spec;
                     if (root.warnedShortcuts[key])
@@ -1241,7 +1355,7 @@ Item {
                         console.info(root.pluginId + ": the " + name + " shortcut " + plan.add[name] + " replaces: " + plan.replace[name].join(", "));
                     });
                     Quickshell.execDetached(["hyprctl", "eval", Shortcuts.assignLua(plan.add, plan.replace)
-                        + "; dofile(" + JSON.stringify(root.pluginDir + "/shortcuts.lua") + ")"]);
+                        + "; dofile(" + JSON.stringify(root.pluginDir + "/lua/shortcuts.lua") + ")"]);
                 }
             }
         }
@@ -1252,25 +1366,19 @@ Item {
         onTriggered: root.ensureShortcutBinds()
     }
 
-    // Set (or, with "off", remove) one of the plugin's shortcuts; saved in shell.json.
+    // Set (or, with "", remove) one of the plugin's shortcuts, saved in shell.json.
     function setShortcut(name, spec) {
-        if (!root.shell || typeof root.shell.updateEntryInline !== "function") {
-            console.warn(root.pluginId + ": can't save the shortcut");
-            return false;
-        }
-        var settings = Object.assign({}, root.settingsEntry || {});
-        delete settings.id;
-        settings[name + "Shortcut"] = spec;
-        root.shell.updateEntryInline(root.pluginId, settings);
-        return true;
+        var change = {};
+        change[name + "Shortcut"] = spec;
+        return store.save(change);
     }
 
-    // Other plugins' Keybind:remove() also deletes these binds when they share
-    // a button (Window controls does on startup), so check again now and then.
+    // Other plugins' Keybind:remove() also deletes the drag binds when they share a
+    // button (Window controls does on startup), so check again now and then.
     Timer {
         interval: 30000
         repeat: true
-        running: root.settingsLoaded && root.dragEnabled
+        running: store.loaded
         onTriggered: {
             root.ensureDragBinds();
             root.ensureShortcutBinds();
@@ -1284,61 +1392,13 @@ Item {
         onTriggered: {
             root.ensureDragBinds();
             root.ensureShortcutBinds();
+            winsaico.ensureHook();
         }
-    }
-
-    function setDragToSnap(enabled) {
-        root.dragOverride = enabled;
-        if (!root.shell || typeof root.shell.updateEntryInline !== "function") {
-            console.warn(root.pluginId + ": can't save the drag-to-snap choice; it lasts until the shell restarts");
-            return;
-        }
-        var settings = Object.assign({}, root.settingsEntry || {});
-        delete settings.id;
-        settings.dragToSnap = enabled;
-        root.shell.updateEntryInline(root.pluginId, settings);
     }
 
     function setMainMonitor(name) {
-        root.mainOverride = name;
+        store.save({ mainMonitor: name });
         root.refreshStrips();
-        if (!root.shell || typeof root.shell.updateEntryInline !== "function") {
-            console.warn(root.pluginId + ": can't save the main monitor; it lasts until the shell restarts");
-            return;
-        }
-        var settings = Object.assign({}, root.settingsEntry || {});
-        delete settings.id;
-        settings.mainMonitor = name;
-        root.shell.updateEntryInline(root.pluginId, settings);
-    }
-
-    function loadSettings(raw) {
-        try {
-            var config = JSON.parse(raw);
-            var plugins = Array.isArray(config.plugins) ? config.plugins : [];
-            var entry = null;
-            for (var i = 0; i < plugins.length; i++)
-                if (plugins[i] && plugins[i].id === root.pluginId)
-                    entry = plugins[i];
-            root.settingsEntry = entry;
-            if (entry && entry.dragToSnap === root.dragOverride)
-                root.dragOverride = null;
-            if (entry && entry.mainMonitor === root.mainOverride)
-                root.mainOverride = "";
-        } catch (e) {
-            console.warn(root.pluginId + ": could not read shell.json: " + e);
-        }
-        root.settingsLoaded = true;
-    }
-
-    FileView {
-        // The shell reads this path directly, not via XDG_CONFIG_HOME.
-        path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
-        watchChanges: true
-        printErrors: false
-        onLoaded: root.loadSettings(text())
-        onLoadFailed: root.settingsLoaded = true
-        onFileChanged: reload()
     }
 
     // ---------- UI ----------
@@ -1350,116 +1410,6 @@ Item {
     Loader {
         active: root.opened && root.monitor !== null
         sourceComponent: overlayComponent
-    }
-
-    Loader {
-        active: root.askAboutDrag
-        sourceComponent: askComponent
-    }
-
-    Component {
-        id: askComponent
-
-        PanelWindow { // qmllint disable uncreatable-type
-            screen: {
-                var screens = Quickshell.screens;
-                var focused = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
-                for (var i = 0; i < screens.length; i++)
-                    if (screens[i].name === focused)
-                        return screens[i];
-                return screens.length > 0 ? screens[0] : null;
-            }
-            anchors.top: true
-            margins.top: 12
-            implicitWidth: 470
-            implicitHeight: askCard.implicitHeight
-            color: "transparent"
-            exclusionMode: ExclusionMode.Ignore
-            WlrLayershell.namespace: "snap-layouts-ask"
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-
-            Rectangle {
-                id: askCard
-                anchors.fill: parent
-                implicitHeight: askColumn.implicitHeight + 32
-                radius: Style.cornerRadius + 4
-                color: Commons.Color.popups.background
-                border.color: Commons.Color.popups.border
-                border.width: 1
-
-                Column {
-                    id: askColumn
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.margins: 16
-                    spacing: 10
-
-                    Text {
-                        width: parent.width
-                        text: "Snap layouts is ready"
-                        color: Commons.Color.popups.text
-                        font.family: Style.font.menuFamily
-                        font.pixelSize: Style.font.heading
-                        font.bold: true
-                    }
-
-                    Text {
-                        width: parent.width
-                        wrapMode: Text.WordWrap
-                        text: "Drag any window to the top of the screen to pick a layout, or press Super+Z. "
-                            + "Keep drag-to-snap turned on? You can change this later with "
-                            + "\"omarchy-shell snaplayouts drag on/off\"."
-                        color: root.withAlpha(Commons.Color.popups.text, 0.8)
-                        font.family: Style.font.menuFamily
-                        font.pixelSize: Style.font.body
-                    }
-
-                    Row {
-                        anchors.right: parent.right
-                        spacing: 8
-
-                        Repeater {
-                            model: [
-                                { label: "Turn it off", value: false },
-                                { label: "Keep it on", value: true }
-                            ]
-
-                            Rectangle {
-                                id: askButton
-                                required property var modelData
-                                width: buttonText.implicitWidth + 28
-                                height: 30
-                                radius: Style.cornerRadius
-                                color: modelData.value
-                                    ? (buttonMouse.containsMouse ? Qt.lighter(Commons.Color.accent, 1.15) : Commons.Color.accent)
-                                    : (buttonMouse.containsMouse ? root.withAlpha(Commons.Color.popups.text, 0.14) : root.withAlpha(Commons.Color.popups.text, 0.07))
-                                border.color: root.withAlpha(Commons.Color.popups.text, 0.2)
-                                border.width: modelData.value ? 0 : 1
-
-                                Text {
-                                    id: buttonText
-                                    anchors.centerIn: parent
-                                    text: askButton.modelData.label
-                                    color: askButton.modelData.value ? Commons.Color.background : Commons.Color.popups.text
-                                    font.family: Style.font.menuFamily
-                                    font.pixelSize: Style.font.body
-                                }
-
-                                MouseArea {
-                                    id: buttonMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.setDragToSnap(askButton.modelData.value)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     Component {
