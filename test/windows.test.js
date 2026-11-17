@@ -129,3 +129,4 @@ test("a minimized window belongs to the workspace it was minimized from", () => 
 test("workspace ids compare as numbers", () => {
     assert.equal(W.belongsToWorkspace(win({ workspace: { id: "11" } }), 11), true);
 });
+

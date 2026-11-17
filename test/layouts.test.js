@@ -93,3 +93,44 @@ test("hit test resolves every zone of every picker layout", () => {
         }
     }
 });
+
+test("zoneRect places any fraction of the usable area, and a layout zone is the same thing", () => {
+    const zone = L.LAYOUTS[L.INDEX.halves][0];
+    assert.deepEqual(L.zoneRect(monitor, gaps, zone), L.zoneScreenRect(monitor, gaps, L.INDEX.halves, 0));
+    const third = L.zoneRect(monitor, gaps, [0, 0, 1 / 3, 1]);
+    assert.equal(third.x, 4);
+    assert.ok(third.w > 500 && third.w < 520);
+});
+
+test("the mosaic is the plugin's layouts for one to four windows", () => {
+    assert.deepEqual(L.mosaicZones(1), [L.LAYOUTS[L.INDEX.full][0]]);
+    assert.deepEqual(L.mosaicZones(2), L.LAYOUTS[L.INDEX.halves]);
+    assert.deepEqual(L.mosaicZones(3), L.LAYOUTS[4]);
+    assert.deepEqual(L.mosaicZones(4), L.LAYOUTS[L.INDEX.quarters]);
+});
+
+test("past four windows the mosaic is rows of nearly equal windows that cover the screen", () => {
+    for (let n = 5; n <= 24; n++) {
+        const zones = L.mosaicZones(n);
+        assert.equal(zones.length, n, `${n} windows`);
+        const area = zones.reduce((sum, [, , w, h]) => sum + w * h, 0);
+        assert.ok(Math.abs(area - 1) < 1e-9, `${n}: zones cover the area`);
+        const sizes = zones.map(([, , w, h]) => w * h);
+        assert.ok(Math.max(...sizes) / Math.min(...sizes) <= 2.0001, `${n}: biggest at most twice the smallest`);
+        for (const [x, y, w, h] of zones)
+            assert.ok(x >= 0 && y >= 0 && x + w <= 1.0001 && y + h <= 1.0001, `${n}: inside the screen`);
+    }
+});
+
+test("five windows are three on top and two below, in reading order", () => {
+    const z = L.mosaicZones(5);
+    assert.deepEqual(z.map((s) => s[1]), [0, 0, 0, 0.5, 0.5]);
+    assert.ok(z[3][2] > z[0][2], "the lower row has wider windows");
+    for (let i = 1; i < z.length; i++)
+        assert.ok(z[i][1] > z[i - 1][1] || z[i][0] > z[i - 1][0], "reading order");
+});
+
+test("a nonsense count still gives one zone", () => {
+    assert.equal(L.mosaicZones(0).length, 1);
+    assert.equal(L.mosaicZones(NaN).length, 1);
+});

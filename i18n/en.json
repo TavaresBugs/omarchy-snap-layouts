@@ -1,0 +1,14 @@
+{
+  "layout.workspaceMosaic": "Workspace layout set to WinSaico",
+  "layout.defaultMosaic": "Default layout set to WinSaico",
+  "panel.winsaico.on": "On here",
+  "panel.winsaico.off": "Off here",
+  "panel.winsaico.hint": "Free windows that share the screen",
+  "panel.autofit": "Auto fit",
+  "panel.autofit.on": "Windows follow the mosaic",
+  "panel.autofit.off": "New windows open centred and free",
+  "panel.overview": "Alt+Tab",
+  "panel.overview.hint": "Window overview and workspace strip",
+  "panel.snap": "Snapping",
+  "panel.snap.hint": "Drag to the top, an edge or a corner"
+}

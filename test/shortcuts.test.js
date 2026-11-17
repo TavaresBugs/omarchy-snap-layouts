@@ -93,5 +93,28 @@ test("the Lua assignment carries valid shortcuts, quoted, and which ones replace
 });
 
 test("each shortcut maps to an event the plugin handles", () => {
-    assert.deepEqual(K.SHORTCUTS, { picker: "toggle", overview: "overview" });
+    assert.deepEqual(K.SHORTCUTS, { picker: "toggle", overview: "overview", layout: "layout-next", layoutBack: "layout-back", autoFit: "autofit-toggle" });
+});
+
+test("a bind's keys are written the way Omarchy writes them", () => {
+    assert.equal(K.specOf(bind(64, "L")), "SUPER + L");
+    assert.equal(K.specOf(bind(72, "L")), "SUPER + ALT + L");
+    assert.equal(K.specOf(bind(69, "p")), "SUPER + CTRL + SHIFT + P");
+    assert.equal(K.specOf(bind(8, "TAB")), "ALT + TAB");
+    assert.equal(K.specOf(bind(0, "F9")), "F9");
+    assert.equal(K.specOf(bind(0, "mouse:272")), "mouse:272");
+    assert.equal(K.specOf(bind(64, "x'y")), "");
+    assert.equal(K.specOf(null), "");
+});
+
+test("the layout keys are where Omarchy has them, else where the plugin took them, else the defaults", () => {
+    const omarchy = [bind(64, "L", "Cycle workspace layout"), bind(72, "L", "Cycle workspace layout back")];
+    assert.deepEqual(K.layoutKeys(omarchy), { layout: "SUPER + L", layoutBack: "SUPER + ALT + L" });
+    // the user moved them in Omarchy
+    const moved = [bind(64, "K", "Cycle workspace layout"), bind(72, "K", "Cycle workspace layout back")];
+    assert.deepEqual(K.layoutKeys(moved), { layout: "SUPER + K", layoutBack: "SUPER + ALT + K" });
+    // the plugin has taken them over, so Omarchy's binds are gone
+    const taken = [mine("layout", "SUPER + K", 64, "K"), mine("layoutBack", "SUPER + ALT + K", 72, "K")];
+    assert.deepEqual(K.layoutKeys(taken), { layout: "SUPER + K", layoutBack: "SUPER + ALT + K" });
+    assert.deepEqual(K.layoutKeys([]), { layout: "SUPER + L", layoutBack: "SUPER + ALT + L" });
 });

@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.3.0
+
+WinSaico, and the plugin's three products each with a switch of their own.
+
+### Added
+
+WinSaico
+- A fourth workspace layout in Omarchy's Super+L cycle (tiling, scrolling, floating, WinSaico) and in Appearance > Workspace Layout: free windows that share the screen. It is a workspace in Omarchy's tiling layout whose windows the plugin floats itself, as the picker does, so a menu or popup stays the size it asks for and windows have no title bar. It is deliberately not Omarchy's floating mode, which floats everything that opens at a set size, adds title bars and takes over focus.
+- **Auto fit**, its complement (`autoFit`, `omarchy-shell snaplayouts autofit on|off|toggle|status`, a key with `autoFitShortcut`): the windows share the screen in the plugin's layouts, a new one takes its place and the others make room; with it off a new window opens in front and in the middle.
+- The plugin takes the layout keys from wherever Omarchy has them, and gives them back when WinSaico is off. `omarchy-shell snaplayouts layout next|back|tiling|scrolling|floating|winsaico` sets the mode by command.
+- WinSaico's row in the layout menu is written to the user's menu extension, in a marked block, while WinSaico is on, and removed when it is off. A workspace that tiles by default joins the mosaic the first time it is shown or gets a window, unless it was set to plain tiling on purpose.
+- Entering WinSaico says "Workspace layout set to WinSaico" in Omarchy's own words and language (`i18n/`), replacing the previous notification as Omarchy's do.
+- As quick as Omarchy's own modes: entering with auto-fit on moves the windows once, in about 0.1 s; a new window is in its place 50 ms after it appears and a closed one's gap closes in about 60 ms.
+- A small Hyprland hook (`lua/mosaic.lua`) floats a window that tiles when it opens on a WinSaico workspace and leaves dialogs, popups and menus alone; the windows it floated carry the tag `snap-layouts-floated` so leaving the mode tiles them again.
+
+Three products, three switches
+- The bar card is **WinSaico** (for the workspace on screen, with Auto fit beneath it), **Alt+Tab** and **Snapping**. `omarchy-shell snaplayouts product winsaico|overview|snap on|off|toggle|status`.
+- `omarchy-shell snaplayouts uninstall` turns every product off, removes WinSaico's menu rows and forgets the plugin's state files, before `omarchy plugin remove`.
+- The code is split: `controllers/` (the options both entry points read, WinSaico with auto-fit, the menu rows), `lua/` (what runs in Hyprland), `lib/menu.js`, `lib/hyprctl.js`.
+
+### Changed
+
+- The options are `winsaico`, `overview` and `snap` in place of `enabled`, `dragToSnap` and `edgeSnap`. An entry from 0.2.0 still reads right and is rewritten in the new form by the first change saved from the card.
+- The overview is off until it is switched on, because it replaces Alt+Tab; the plugin's default key is Alt+Tab (`overviewShortcut` changes it).
+- The one-time prompt about drag-to-snap is gone: Snapping is on from the start and the card turns it off.
+- No clone of Omarchy's dock or workspaces widget is shipped: a cloned plugin gets a narrower shell (no `shellConfig`, no app library), so a clone loses the user's settings. The dock stays Omarchy's own and shows on floating workspaces only.
+
+### Removed
+
+- The master switch (`enabled`, `power`) and the `drag` command, replaced by the three switches and `product`.
+
 ## 0.2.0
 
 The first release of this fork. Built on 0.1.0 by n0rthstar88.
