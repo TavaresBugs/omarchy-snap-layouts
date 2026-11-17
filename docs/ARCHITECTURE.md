@@ -76,6 +76,10 @@ Nothing polls: a drag runs `hyprctl` twice (start, stop), and every sample betwe
 
 `lib/navigation.js` turns a key and the current state (focus on the windows or on the strip, selected card, layout) into an action; `SnapLayouts.overviewKey` only translates Qt's event into that input and carries the action out. Up from the top row enters the strip; Shift+arrow on the strip swaps workspace numbers (`Dispatch.swapWorkspaces`, three `change_id` steps through a free number).
 
+## Choosing a window
+
+`focusWindow` does not focus at once. The overview holds the keyboard exclusively, and Hyprland ignores a request to focus another window until it lets go (asked too early, the focus stays where it was and returns to it when the overview closes). So the cards travel back to their windows first (`closeAnim`); `landed()` then lets go of the keyboard (`releasing`), `focusStep` sends the focus and asks again if Hyprland has not answered by the next look, and the overview goes away on the `activewindowv2` event for that window, after at most four looks. The window is raised under the card that sits exactly on it, so nothing shows twice. `lua/layer.lua` keeps Hyprland from fading the overlay out afterwards, which would draw the card's last frame over the real window for 150 ms.
+
 ## Modal overview
 
 Hyprland handles shortcuts before the focused surface sees a key, so with the overview open a key like Super+Shift+arrow would also act on the windows behind it. `lua/overview-mode.lua` (sent with `hyprctl eval` on every open) defines and enters a submap in which only a few binds exist: Alt+Tab, Super+Shift+arrow (reported to the plugin as `swap-<direction>` events), Super+1..0 (Omarchy's workspace focus), Escape (the submap's reset key), and a `KEEP` list of capture, notification and hardware keys re-bound through Omarchy's own `o.bind` (extendable with a global `snap_layouts_overview_keep`). Unbound keys go on to the overview. `hide()` leaves the submap; a `submap` event with an empty name (Escape) closes the overview; and the plugin resets the submap when it starts, so nothing can leave the shortcuts paused.

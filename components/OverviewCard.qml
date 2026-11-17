@@ -54,18 +54,19 @@ Item {
     Behavior on opacity { NumberAnimation { duration: 140 } }
 
     // The selected card is lifted and a little larger, but only as far as the room
-    // around it allows. A card on a window that fills the mosaic has none, so it
-    // is exactly that window's size; with room (in the overview) it gets the full
-    // emphasis. Nothing here depends on the layout.
+    // around it allows, and only as far as it has travelled: on its window (travel
+    // 0) it is exactly that window's size and place, whether or not there is room
+    // around the window, so it does not jump when the overview goes away; settled in
+    // the overview it gets the full emphasis. Nothing here depends on the layout.
     property real lift: selected ? 1 : 0
     Behavior on lift { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
     readonly property var room: Motion.emphasis(x, y, width, height, bounds)
-    scale: 1 + (room.scale - 1) * lift
-    transform: Translate { y: -card.room.lift * card.lift }
+    scale: 1 + (room.scale - 1) * lift * travel
+    transform: Translate { y: -card.room.lift * card.lift * card.travel }
 
     ThumbFrame {
         anchors.fill: parent
-        radius: card.cornerRadius
+        radius: card.cornerRadius * card.travel
         emphasized: card.selected
         depth: card.travel
 

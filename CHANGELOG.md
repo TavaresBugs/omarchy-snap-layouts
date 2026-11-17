@@ -28,6 +28,12 @@ Three products, three switches
 - The one-time prompt about drag-to-snap is gone: Snapping is on from the start and the card turns it off.
 - No clone of Omarchy's dock or workspaces widget is shipped: a cloned plugin gets a narrower shell (no `shellConfig`, no app library), so a clone loses the user's settings. The dock stays Omarchy's own and shows on floating workspaces only.
 
+### Fixed
+
+- Choosing a window in the Alt+Tab overview brings it forward even when a floating window such as a browser covers it. The overview holds the keyboard exclusively while it is open, and Hyprland ignores a focus request until it lets go, so the focus stayed on the old window and returned to it when the overview closed. Now the cards travel back to their windows, the overview lets go of the keyboard, asks for the focus and goes away when Hyprland says it has moved.
+- The overview card of the selected window no longer jumps when the overview goes away. It was drawn 5% larger than the window even once it sat on it (when the window has room around it, as a floating one does), and showed its ring and rounded corners there; now the enlargement, the lift, the ring and the corners grow with the card's travel, so on its window it is that window exactly.
+- The overview no longer leaves a ghost of its last frame over the window it has just chosen. Hyprland faded the overlay out over about 150 ms, drawing a card (with its ring, its shadow and a capture a moment old) over the real window; `lua/layer.lua` turns that fade off for the plugin's layer, as Omarchy's own panels do.
+
 ### Removed
 
 - The master switch (`enabled`, `power`) and the `drag` command, replaced by the three switches and `product`.

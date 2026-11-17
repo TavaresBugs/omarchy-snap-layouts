@@ -168,7 +168,7 @@ Item {
         duration: Motion.TOKENS.close.duration
         easing.type: Easing.BezierSpline
         easing.bezierCurve: Motion.TOKENS.close.curve
-        onFinished: root.hide()
+        onFinished: root.landed()
     }
 
     // Thumbnails in rows of equal height; the maths is in lib/overview.js.
@@ -474,8 +474,58 @@ Item {
             lua.push("hl.dispatch(hl.dsp.window.move({ workspace = '" + root.monitor.workspaceId + "', window = '" + sel + "' }))");
         lua.push("hl.dispatch(hl.dsp.focus({ window = '" + sel + "' }))");
         lua.push("hl.dispatch(hl.dsp.window.bring_to_top())");
-        Quickshell.execDetached(["hyprctl", "eval", lua.join("; ")]);
+        lua = lua.join("; ");
+        // Nothing moves the focus (and so nothing to wait for) when the window already has it.
+        var already = root.activeIpc && root.activeIpc.address === address;
+        if (root.mode !== "overview" || already) {
+            Quickshell.execDetached(["hyprctl", "eval", lua]);
+            root.close();
+            return;
+        }
+        // The overview holds the keyboard exclusively while it is open, and Hyprland
+        // ignores a request to focus a window until it lets go: asked too early the
+        // focus stays where it was and comes back to it when the overview closes. So
+        // the cards travel back to their windows first, then it lets go of the keyboard,
+        // asks for the focus, and goes away when Hyprland says it has moved (landed(),
+        // focusStep, the activewindowv2 event). The window is raised under the card
+        // that sits exactly on it, so nothing shows twice.
+        root.pendingFocus = { address: address, lua: lua };
         root.close();
+    }
+
+    // The window the overview is about to focus, once its cards are home: { address, lua }.
+    property var pendingFocus: null
+    // The overview has let go of the keyboard so that the focus can move.
+    property bool releasing: false
+
+    // The cards are back on their windows.
+    function landed() {
+        if (!root.pendingFocus) {
+            root.hide();
+            return;
+        }
+        root.releasing = true;
+        focusStep.attempts = 0;
+        focusStep.restart();
+    }
+
+    // Asks for the focus once the keyboard is let go of, and again if Hyprland has not
+    // answered by the next look; after a few looks the overview goes away regardless.
+    Timer {
+        id: focusStep
+        interval: 40
+        property int attempts: 0
+        onTriggered: {
+            if (!root.pendingFocus)
+                return;
+            if (attempts >= 4) {
+                root.hide();
+                return;
+            }
+            attempts++;
+            Quickshell.execDetached(["hyprctl", "eval", root.pendingFocus.lua]);
+            restart();
+        }
     }
 
     // The overview panel covers the usable area of the screen, with a margin.
@@ -702,6 +752,9 @@ Item {
         closeAnim.stop();
         root.closing = false;
         root.closingIntoWorkspace = false;
+        focusStep.stop();
+        root.pendingFocus = null;
+        root.releasing = false;
         root.stripFocus = false;
         root.leaveModal();
         root.mode = "";
@@ -984,6 +1037,12 @@ Item {
                 }
                 return;
             }
+            // The window the overview asked for has the focus: it can go away now.
+            if (event && event.name === "activewindowv2") {
+                if (root.pendingFocus && root.releasing && "0x" + event.data === root.pendingFocus.address)
+                    root.hide();
+                return;
+            }
             if (event && event.name === "openwindow") {
                 // ADDRESS,WORKSPACE,CLASS,TITLE
                 var opened = String(event.data).split(",");
@@ -1208,9 +1267,15 @@ Item {
     onOptionsChanged: root.ensureShortcutBinds()
 
     function settingsReady() {
+        root.ensureLayerRule();
         root.ensureDragBinds();
         root.ensureShortcutBinds();
         winsaico.ensureHook();
+    }
+
+    // The overlay is not faded out by Hyprland (lua/layer.lua). A reload drops the rule.
+    function ensureLayerRule() {
+        Quickshell.execDetached(["hyprctl", "eval", "dofile(" + JSON.stringify(root.pluginDir + "/lua/layer.lua") + ")"]);
     }
 
     // Adds the drag binds for any button that lacks them. Binds are only ever
@@ -1351,6 +1416,7 @@ Item {
         id: reloadCheck
         interval: 500
         onTriggered: {
+            root.ensureLayerRule();
             root.ensureDragBinds();
             root.ensureShortcutBinds();
             winsaico.ensureHook();
@@ -1400,7 +1466,7 @@ Item {
             WlrLayershell.layer: (root.mode === "overview"
                     && !(root.activeIpc && Number(root.activeIpc.fullscreen) > 0))
                 ? WlrLayer.Top : WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: (root.mode === "drag" || root.mode === "edge") ? WlrKeyboardFocus.None : WlrKeyboardFocus.Exclusive
+            WlrLayershell.keyboardFocus: (root.mode === "drag" || root.mode === "edge" || root.releasing) ? WlrKeyboardFocus.None : WlrKeyboardFocus.Exclusive
             // While a window is being dragged the overlay must not take the pointer.
             mask: (root.mode === "drag" || root.mode === "edge") ? noInput : null
 

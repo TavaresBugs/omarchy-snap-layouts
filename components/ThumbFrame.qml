@@ -25,7 +25,8 @@ Item {
     property bool emphasized: false
     property bool current: false
     property color fill: "transparent"
-    // 0..1: how far the frame has come off the desktop (the shadow grows with it).
+    // 0..1: how far the frame has come off the desktop (the shadow and the ring grow
+    // with it, so at 0 it is just the content).
     property real depth: 1
     // Children declared inside a ThumbFrame go into the clipped area.
     default property alias content: clip.data
@@ -78,6 +79,7 @@ Item {
         anchors.fill: parent
         radius: frame.radius
         color: "transparent"
+        opacity: frame.depth
         border.width: frame.emphasized || frame.current ? 2 : 1
         border.color: frame.emphasized ? frame.accent
             : (frame.current ? Util.withAlpha(frame.accent, 0.5) : frame.rim)
