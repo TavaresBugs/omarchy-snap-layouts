@@ -7,7 +7,7 @@ SnapLayouts.qml      BarWidget.qml + Panel.qml
  overlay: picker,     bar button and its card
  overview, IPC             │
    │                       │      both read the same state
-   └──── controllers/ ─────┘      Store (options + lists), WinSaico, MenuRows
+   └──── controllers/ ─────┘      Store (options + lists), WinSaico, MenuRows, DragSensor
    │  properties / signals              │  plain function calls
 components/          views              lib/        decisions (pure JS)
                                         lua/        what runs inside Hyprland
@@ -19,9 +19,9 @@ The plugin is three products with a switch each (`winsaico`, `overview`, `snap`,
 
 **`components/`** only draw. Each takes data as properties and reports what the user did as signals. They never read Hyprland or the plugin's state, so they can be reused or restyled on their own. Two pieces are shared so every thumbnail looks like part of one family: `ThumbFrame` (one soft shadow scaled to the frame, content clipped to rounded corners, a thin ring in the theme's accent drawn above the content so nothing spills over the outline: strong for the selection, soft for the viewed workspace) and `WindowPicture` (a window's capture with an icon fallback). `OverviewCard` (overview and snap assist) and the workspace strip's thumbnails are both built on them.
 
-**`controllers/`** are non-visual QML that own one concern each. `Store` reads `shell.json` and the files that list WinSaico's workspaces, once, for both entry points (the overlay and the bar button are separate QML roots, so they used to read the same files twice), and saves options through the shell with an override that applies a change before the file has been rewritten. `WinSaico` is the mode and auto-fit (below). `MenuRows` keeps WinSaico's rows in Omarchy's menu extension in step with its switch.
+**`controllers/`** are non-visual QML that own one concern each. `Store` reads `shell.json` and the files that list WinSaico's workspaces, once, for both entry points (the overlay and the bar button are separate QML roots, so they used to read the same files twice), and saves options through the shell with an override that applies a change before the file has been rewritten. `WinSaico` is the mode and auto-fit (below). `MenuRows` keeps WinSaico's rows in Omarchy's menu extension in step with its switch. `DragSensor` starts and stops `lua/drag.lua` (the pointer while a window is dragged) and turns what it sends into a signal; it decides nothing.
 
-**`SnapLayouts.qml`** owns what is left: the current mode of the picker and overview, polling `hyprctl` while a button is held, the Hyprland and shell events, the IPC handler, the binds, and issuing `hyprctl eval` commands. It converts between Hyprland's data and the libraries' inputs, and feeds results to the components.
+**`SnapLayouts.qml`** owns what is left: the current mode of the picker and overview, what a drag shows (the sensor's samples go through `lib/drag.js` and are drawn here), the Hyprland and shell events, the IPC handler, the binds, and issuing `hyprctl eval` commands. It converts between Hyprland's data and the libraries' inputs, and feeds results to the components.
 
 ## The libraries
 
@@ -29,6 +29,7 @@ The plugin is three products with a switch each (`winsaico`, `overview`, `snap`,
 |---|---|
 | `layouts.js` | The layouts, where a zone lands on a monitor, the mosaic for any number of windows, the picker's geometry and hit test |
 | `edge.js` | Which layout and zone a pointer against an edge or corner asks for |
+| `drag.js` | What a stream of pointer positions asks for while a window is dragged: the wait at an edge, the picker near the top |
 | `monitors.js` | Hyprland's monitors converted to logical pixels |
 | `windows.js` | Which windows are offered and in what order; which floating windows cover a tiled one |
 | `autosnap.js` | Auto-fit: which windows take part and which zone of the mosaic each gets |
@@ -59,11 +60,13 @@ The plugin is three products with a switch each (`winsaico`, `overview`, `snap`,
 
 ## Data flow for a drag
 
-1. The mouse binds in `lua/hook.lua` report press and release as Hyprland events.
-2. On press, a snapshot of monitors and windows is taken; while the button is held the cursor and windows are polled every 60 ms.
-3. A window whose position changed is the one being dragged.
-4. `Edge.edgeTarget` and the picker hit test turn the cursor position into a layout and zone, which the components preview.
-5. On release the window is placed with `hyprctl eval` (float, resize, move).
+1. The mouse binds in `lua/hook.lua` report press and release as Hyprland events (hyprbars reports a title-bar drag the same way).
+2. On press, a snapshot of monitors is taken and `controllers/DragSensor.qml` starts `lua/drag.lua` inside Hyprland (one `hyprctl eval`).
+3. That file looks at the cursor and the windows every 8 ms from inside the compositor, works out which window is being dragged (the one that moved without changing size) and sends an event with its address and the pointer, only when the position changes. It decides nothing else. If nothing moves for 1.5 s (a click) or the release is lost (60 s) it says `idle` and stops.
+4. `Drag.step` (`lib/drag.js`) turns each sample into an act: show the edge preview after the wait at an edge (`Edge.edgeTarget`), open the picker near the top, move or hide them. When the answer changes with time alone (the wait running out while the pointer is held still) it says when to look again.
+5. On release the sensor is stopped (the second `hyprctl eval`) and the window is placed with `hyprctl eval` (float, resize, move).
+
+Nothing polls: a drag runs `hyprctl` twice (start, stop), and every sample between is an event. Measured on the real screen, the edge preview shows about 0.2 s after the pointer reaches the edge (it was about 0.5 s, with the wait at 320 ms and `hyprctl` read twice every 60 ms).
 
 ## Overview
 

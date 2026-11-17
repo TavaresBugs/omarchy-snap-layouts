@@ -194,9 +194,9 @@ Options go in this plugin's entry in `~/.config/omarchy/shell.json`. Anything mi
   "autoFit": true,
   "overview": false,
   "snap": true,
-  "edgeDwellMs": 320,
+  "edgeDwellMs": 120,
   "edgeMargin": 12,
-  "edgeCorner": 90,
+  "edgeCorner": 60,
   "overviewScope": "workspace",
   "mainMonitor": "",
   "pickerShortcut": "",
@@ -212,9 +212,9 @@ Options go in this plugin's entry in `~/.config/omarchy/shell.json`. Anything mi
 | `autoFit` | `true` | WinSaico's complement: windows share the screen by themselves; `false` leaves them free and a new window opens in the middle. Also the bar card or `autofit` |
 | `overview` | `false` | Alt+Tab, the window overview and workspace strip. On, the plugin binds its key. Also the bar card or `product overview` |
 | `snap` | `true` | Snapping: the picker, dragging to the top, an edge or a corner. Also the bar card or `product snap` |
-| `edgeDwellMs` | `320` | How long to hold at an edge before the preview shows (0 to 3000) |
+| `edgeDwellMs` | `120` | How long to hold at an edge before the preview shows (0 to 3000) |
 | `edgeMargin` | `12` | Pixels from the edge that count as "at the edge" (1 to 80) |
-| `edgeCorner` | `90` | Pixels along an edge that count as a corner (10 to 400) |
+| `edgeCorner` | `60` | Pixels along an edge that count as a corner (10 to 400) |
 | `overviewScope` | `"workspace"` | `"workspace"` or `"all"` |
 | `mainMonitor` | `""` | Connector shown big in the overview strip, e.g. `"DP-3"`; empty = an external monitor if any. Also set by clicking a screen's name |
 | `pickerShortcut` | `""` | A key the plugin binds for the layout picker, e.g. `"SUPER + Z"`; empty = none. Also `shortcut picker` |

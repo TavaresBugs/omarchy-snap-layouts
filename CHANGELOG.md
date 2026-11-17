@@ -22,6 +22,7 @@ Three products, three switches
 
 ### Changed
 
+- Dragging a window to an edge is quicker to recognise. The pointer is read inside Hyprland (`lua/drag.lua`, started by `controllers/DragSensor.qml`) instead of by running `hyprctl` twice every 60 ms, and the rules that turn it into a preview or the picker are a library of their own (`lib/drag.js`, tested). The wait at an edge (`edgeDwellMs`) is 120 ms by default (was 320) and a corner reaches 60 px along an edge (`edgeCorner`, was 90). Set the old values in `shell.json` to get the old feel back.
 - The options are `winsaico`, `overview` and `snap` in place of `enabled`, `dragToSnap` and `edgeSnap`. An entry from 0.2.0 still reads right and is rewritten in the new form by the first change saved from the card.
 - The overview is off until it is switched on, because it replaces Alt+Tab; the plugin's default key is Alt+Tab (`overviewShortcut` changes it).
 - The one-time prompt about drag-to-snap is gone: Snapping is on from the start and the card turns it off.

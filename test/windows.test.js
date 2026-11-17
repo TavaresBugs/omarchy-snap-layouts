@@ -70,12 +70,6 @@ test("Alt+Tab starts on the previously used window", () => {
     assert.equal(W.previousWindowIndex([]), 0);
 });
 
-test("positionsOf keys position and size by address", () => {
-    const p = W.positionsOf([win({ address: "a", at: [1, 2], size: [3, 4] })]);
-    assert.deepEqual(p.a, { at: [1, 2], size: [3, 4] });
-    assert.deepEqual(W.positionsOf(null), {});
-});
-
 // The case that started this: MetaTrader tiled full-screen, hidden under two
 // floating windows (Claude on the left, Firefox on the right).
 const metatrader = win({ address: "mt", floating: false, at: [4, 30], size: [1528, 830] });

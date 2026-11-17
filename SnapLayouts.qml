@@ -10,7 +10,7 @@ import qs.Commons as Commons // qmllint disable import
 import "components"
 import "controllers"
 import "lib/layouts.js" as Layouts
-import "lib/edge.js" as Edge
+import "lib/drag.js" as Drag
 import "lib/monitors.js" as Monitors
 import "lib/motion.js" as Motion
 import "lib/navigation.js" as Navigation
@@ -105,8 +105,8 @@ Item {
     readonly property int edgeMargin: root.options.edgeMargin
     readonly property int edgeCorner: root.options.edgeCorner
     readonly property int edgeDwellMs: root.options.edgeDwellMs
-    property string edgePending: ""
-    property double edgePendingAt: 0
+    // What the drag has seen so far (lib/drag.js): which edge it waits at, and since when.
+    property var dragState: Drag.initial()
 
     // Snap assist is paged: at most assistPageSize windows per page.
     readonly property int assistPageSize: 6
@@ -486,11 +486,8 @@ Item {
     readonly property int assistZone: assistZones.length > 0 ? assistZones[0] : -1
     property var candidates: []
 
-    // Drag tracking between the left-button press and release events.
+    // Between the button's press and release events.
     property bool buttonDown: false
-    property var dragStart: null
-    property bool dragging: false
-    property double pressedAt: 0
 
     // ---------- Geometry ----------
 
@@ -709,7 +706,7 @@ Item {
         root.leaveModal();
         root.mode = "";
         root.assistPage = 0;
-        root.edgePending = "";
+        root.dragState = Drag.initial();
         root.hoverLayout = -1;
         root.hoverZone = -1;
         root.assistLayout = -1;
@@ -814,54 +811,39 @@ Item {
                     root.overviewWorkspace = root.followTarget;
                     root.refreshAfterChange(dir);
                 }
-                else if (root.snapshotReason === "press" && root.buttonDown) {
-                    root.dragStart = Windows.positionsOf(root.clients);
-                    dragPoll.start();
-                }
             }
         }
     }
 
-    Process {
-        id: pollProc
-        command: ["sh", "-c", "hyprctl -j clients; printf '\\n@@SNAP@@\\n'; hyprctl -j cursorpos"]
-        stdout: StdioCollector {
-            onStreamFinished: root.handleDragSample(Hyprctl.parseSections(text))
+    // ---------- Dragging ----------
+    //
+    // The pointer comes from controllers/DragSensor.qml, what it is asking for from
+    // lib/drag.js; this is where that is shown. A window is held against an edge or a
+    // corner and the preview of its zone shows; held near the top, the picker does.
+
+    DragSensor {
+        id: sensor
+        pluginDir: root.pluginDir
+        onSample: (x, y, address) => root.handleDragSample(x, y, address)
+        // A click, or a lost release: whatever the drag had opened goes away.
+        onGaveUp: {
+            if (root.mode === "drag" || root.mode === "edge")
+                root.close();
         }
     }
 
-    // While a mouse button is held: is a window being moved (title-bar drag,
-    // Super+drag, or Window controls' right-drag), and is the pointer at the
-    // top of a screen?
+    // Looks at the last sample again when the answer changes with time alone: the wait at
+    // an edge running out while the pointer is held still.
     Timer {
-        id: dragPoll
-        interval: 60
-        repeat: true
-        onTriggered: {
-            var held = Date.now() - root.pressedAt;
-            // A plain click never moves the window; stop polling quickly. A
-            // missed release event can't leave this running forever either.
-            if ((!root.dragging && held > 1500) || held > 60000) {
-                stop();
-                if (root.mode === "drag" || root.mode === "edge")
-                    root.close();
-                return;
-            }
-            if (!pollProc.running)
-                pollProc.running = true;
-        }
+        id: dragRecheck
+        onTriggered: root.handleDragSample(root.lastSample.x, root.lastSample.y, root.lastSample.address)
     }
+    property var lastSample: ({ x: 0, y: 0, address: "" })
 
-    property string dragAddress: ""
-
-
-    // Which zone the pointer is asking for, if it is against an edge/corner.
-    // Layout 0 = halves, layout 5 = quarters.
-    function edgeTarget(m, cur) {
-        if (!root.snapOn)
-            return null;
-        var t = Edge.edgeTarget(m, cur, root.edgeOptions);
-        return t ? { layout: Layouts.INDEX[t.layout], zone: t.zone, key: t.key } : null;
+    // Which zone the pointer is asking for, if it is against an edge/corner, as the
+    // picker's layout and zone numbers.
+    function edgeZone(edge) {
+        return { layout: Layouts.INDEX[edge.layout], zone: edge.zone };
     }
 
     // Edge snap is a quick fit: place the window and stop, no snap assist.
@@ -871,81 +853,62 @@ Item {
         root.close();
     }
 
-    function handleDragSample(s) {
-        if (!root.buttonDown || !root.dragStart)
+    function handleDragSample(x, y, address) {
+        if (!root.buttonDown)
             return;
-        var list = s[0];
-        var cur = s[1];
-        if (!list || !cur)
-            return;
-        var win = null;
-        for (var i = 0; i < list.length; i++) {
-            var c = list[i];
-            if (root.dragAddress) {
-                if (c.address === root.dragAddress)
-                    win = c;
-                continue;
-            }
-            var start = root.dragStart[c.address];
-            if (!start || Number(c.fullscreen) > 0)
-                continue;
-            var moved = Math.abs(c.at[0] - start.at[0]) > 4 || Math.abs(c.at[1] - start.at[1]) > 4;
-            var sameSize = c.size[0] === start.size[0] && c.size[1] === start.size[1];
-            if (moved && sameSize) {
-                win = c;
-                break;
-            }
-        }
-        if (!win)
-            return;
-        root.dragAddress = win.address;
-        root.dragging = true;
-
-        var m = root.monitorAt(cur.x, cur.y);
-        if (!m)
-            return;
-        var edge = root.edgeTarget(m, cur);
-        if (edge) {
-            if (root.mode === "edge") {
-                root.hoverLayout = edge.layout;
-                root.hoverZone = edge.zone;
-                return;
-            }
-            if (root.edgePending !== edge.key) {
-                root.edgePending = edge.key;
-                root.edgePendingAt = Date.now();
-            } else if (Date.now() - root.edgePendingAt >= root.edgeDwellMs && root.mode !== "picker" && root.mode !== "assist") {
-                root.monitor = m;
-                root.targetAddress = win.address;
-                root.hoverLayout = edge.layout;
-                root.hoverZone = edge.zone;
-                root.mode = "edge";
-                return;
-            }
+        root.lastSample = { x: x, y: y, address: address };
+        var r = Drag.step(root.dragState, { x: x, y: y }, {
+            now: Date.now(),
+            mode: root.mode,
+            current: root.monitor ? root.monitor.name : "",
+            monitors: root.monitors,
+            snapOn: root.snapOn,
+            edge: root.edgeOptions,
+            dwellMs: root.edgeDwellMs,
+            topDistance: root.dragTriggerDistance
+        });
+        root.dragState = r.state;
+        if (r.recheck) {
+            dragRecheck.interval = r.recheck;
+            dragRecheck.restart();
         } else {
-            root.edgePending = "";
-            if (root.mode === "edge") {
-                root.hoverLayout = -1;
-                root.hoverZone = -1;
-                root.close();
-                return;
-            }
+            dragRecheck.stop();
         }
-        var nearTop = cur.y - m.y <= root.dragTriggerDistance;
-        if (root.mode === "" && nearTop) {
-            root.monitor = m;
-            root.targetAddress = win.address;
-            root.mode = "drag";
-        } else if (root.mode === "drag" && nearTop && m.name !== root.monitor.name) {
-            root.monitor = m;
-        }
-        if (root.mode !== "drag")
-            return;
 
-        var lx = cur.x - root.monitor.x;
-        var ly = cur.y - root.monitor.y;
+        if (r.act === "edge-hover" || r.act === "edge-open") {
+            var zone = root.edgeZone(r.edge);
+            if (r.act === "edge-open") {
+                root.monitor = r.monitor;
+                root.targetAddress = address;
+                root.mode = "edge";
+            }
+            root.hoverLayout = zone.layout;
+            root.hoverZone = zone.zone;
+        } else if (r.act === "edge-close") {
+            root.hoverLayout = -1;
+            root.hoverZone = -1;
+            root.close();
+        } else if (r.act === "picker-open") {
+            root.monitor = r.monitor;
+            root.targetAddress = address;
+            root.mode = "drag";
+            root.pickerHover(x, y);
+        } else if (r.act === "picker-monitor") {
+            root.monitor = r.monitor;
+            root.pickerHover(x, y);
+        } else if (r.act === "picker-hover") {
+            root.pickerHover(x, y);
+        }
+    }
+
+    // The picker is open for a dragged window: which zone is the pointer over? Leaving
+    // the card (or going to another screen) closes it.
+    function pickerHover(x, y) {
+        var m = root.monitorAt(x, y);
+        var lx = x - root.monitor.x;
+        var ly = y - root.monitor.y;
         var cr = root.cardRect();
-        if (ly > cr.y + cr.h + 120 || m.name !== root.monitor.name) {
+        if (!m || ly > cr.y + cr.h + 120 || m.name !== root.monitor.name) {
             root.mode = "";
             root.hoverLayout = -1;
             root.hoverZone = -1;
@@ -960,20 +923,18 @@ Item {
         if (!root.snapOn || root.mode === "picker" || root.mode === "assist")
             return;
         root.buttonDown = true;
-        root.dragging = false;
-        root.dragStart = null;
-        root.dragAddress = "";
-        root.pressedAt = Date.now();
+        root.dragState = Drag.initial();
         root.requestSnapshot("press");
+        sensor.start();
     }
 
     function handleRelease() {
         if (!root.buttonDown)
             return;
         root.buttonDown = false;
-        dragPoll.stop();
-        root.dragging = false;
-        root.edgePending = "";
+        sensor.stop();
+        dragRecheck.stop();
+        root.dragState = Drag.initial();
         if (root.mode !== "drag" && root.mode !== "edge")
             return;
         var layoutIndex = root.hoverLayout;
