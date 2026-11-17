@@ -199,3 +199,26 @@ test("every sentence the plugin asks the language catalogs for exists in English
             assert.ok(key in english, file + " has a key English does not: " + key);
     }
 });
+
+// ---- Taste lives in the libraries, not in the components ----
+
+test("every Shape.ALPHA and Motion.TOKENS.dur name a component uses exists", () => {
+    const shape = load("shape.js");
+    const motion = load("motion.js");
+    for (const file of qmlFiles) {
+        const source = read(file);
+        for (const [, name] of source.matchAll(/Shape\.ALPHA\.(\w+)/g))
+            assert.ok(name in shape.ALPHA, `${file}: Shape.ALPHA.${name} is not defined`);
+        for (const [, name] of source.matchAll(/Motion\.TOKENS\.dur\.(\w+)/g))
+            assert.ok(name in motion.TOKENS.dur, `${file}: Motion.TOKENS.dur.${name} is not defined`);
+    }
+});
+
+test("the components write no radius, duration or tint strength of their own", () => {
+    for (const file of qmlFiles.filter((f) => f.startsWith("components/") && !/Wallpaper|Backdrop|MosaicIcon/.test(f))) {
+        const code = read(file).replace(/\/\/.*$/gm, "");
+        assert.ok(!/\bradius: \d/.test(code), `${file}: a radius written as a number`);
+        assert.ok(!/duration: \d/.test(code), `${file}: a duration written as a number`);
+        assert.ok(!/withAlpha\([^)]*, 0\.\d+\)/.test(code.replace(/withAlpha\(Commons\.Color\.[\w.]+, 1\)/g, "")), `${file}: a tint strength written as a number`);
+    }
+});

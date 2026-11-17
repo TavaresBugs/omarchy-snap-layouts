@@ -3,6 +3,8 @@ import QtQuick
 import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
 import "Util.js" as Util
+import "../lib/shape.js" as Shape
+import "../lib/motion.js" as Motion
 
 // A row of workspace thumbnails. Each one shows what the workspace really holds:
 // its windows, drawn small at their real positions with their live picture.
@@ -12,6 +14,11 @@ import "Util.js" as Util
 //   entries: from Workspaces.buildStrip -> [{ id, label, windows: [{x, y, w, h, address}], count }]
 Item {
     id: strip
+
+    // Every corner comes from lib/shape.js, from the windows' own rounding.
+    readonly property var shape: Shape.radii(Style.cornerRadius)
+    property int borderWidth: -1
+    readonly property var ring: Shape.ring(strip.borderWidth)
 
     property var entries: []
     property int selectedId: 0
@@ -91,17 +98,18 @@ Item {
                     x: thumb.dragging ? strip.dragDx : 0
                     y: thumb.dragging ? strip.dragDy : 0
                 }
-                Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                Behavior on opacity { NumberAnimation { duration: 120 } }
+                Behavior on scale { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.quick); easing.type: Easing.OutCubic } }
+                Behavior on opacity { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.quick) } }
 
                 ThumbFrame {
                     anchors.fill: parent
-                    radius: 8
+                    radius: strip.shape.thumb
+                    borderWidth: strip.borderWidth
                     // Strong where the focus is: the viewed workspace when the strip has it,
                     // or a drop target; the viewed one is only softly marked otherwise.
                     emphasized: (thumb.selected && strip.focused) || thumb.target || thumb.over
                     current: thumb.selected && !strip.focused
-                    fill: Util.withAlpha(Commons.Color.popups.background, 0.82)
+                    fill: Util.withAlpha(Commons.Color.popups.background, Shape.ALPHA.pane)
 
                     // The windows, at their real positions, with their live picture.
                     Repeater {
@@ -115,24 +123,24 @@ Item {
                             y: placed.y * thumb.height
                             width: Math.max(4, placed.w * thumb.width)
                             height: Math.max(4, placed.h * thumb.height)
-                            Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                            Behavior on y { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                            Behavior on width { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                            Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                            Behavior on x { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.fade); easing.type: Easing.OutCubic } }
+                            Behavior on y { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.fade); easing.type: Easing.OutCubic } }
+                            Behavior on width { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.fade); easing.type: Easing.OutCubic } }
+                            Behavior on height { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.fade); easing.type: Easing.OutCubic } }
 
                             WindowPicture {
                                 anchors.fill: parent
                                 toplevel: strip.toplevelFor(win.modelData.address)
                                 cornerRadius: 0
-                                backdrop: Util.withAlpha(Commons.Color.background, 0.8)
+                                backdrop: Util.withAlpha(Commons.Color.background, Shape.ALPHA.placeholder)
                                 fallbackIconSize: 0
                             }
                             // A hairline keeps neighbouring windows apart.
                             Rectangle {
                                 anchors.fill: parent
                                 color: "transparent"
-                                border.width: 1
-                                border.color: Util.withAlpha("black", 0.45)
+                                border.width: strip.ring.rim
+                                border.color: Util.withAlpha("black", Shape.ALPHA.edge)
                             }
                         }
                     }
@@ -150,15 +158,15 @@ Item {
                             anchors.fill: parent
                             toplevel: strip.dropToplevel
                             cornerRadius: 0
-                            backdrop: Util.withAlpha(Commons.Color.popups.text, 0.25)
+                            backdrop: Util.withAlpha(Commons.Color.popups.text, Shape.ALPHA.muted)
                             fallbackIconSize: 0
-                            opacity: 0.8
+                            opacity: Shape.ALPHA.label
                         }
                         Rectangle {
                             anchors.fill: parent
-                            color: Util.withAlpha(Commons.Color.imagePicker.selectedBorder, 0.2)
+                            color: Util.withAlpha(Commons.Color.imagePicker.selectedBorder, Shape.ALPHA.tintStrong)
                             border.color: Commons.Color.imagePicker.selectedBorder
-                            border.width: 1.5
+                            border.width: strip.ring.strong
                         }
                     }
 
@@ -166,14 +174,14 @@ Item {
                     Text {
                         anchors.left: parent.left
                         anchors.bottom: parent.bottom
-                        anchors.margins: 6
+                        anchors.margins: Style.spacing.md
                         text: thumb.modelData.label
                         color: Commons.Color.popups.text
                         font.family: Qt.application.font.family
                         font.pixelSize: Style.font.body - 2
                         font.weight: Font.DemiBold
                         style: Text.Outline
-                        styleColor: Util.withAlpha("black", 0.6)
+                        styleColor: Util.withAlpha("black", Shape.ALPHA.outline)
                     }
                 }
 

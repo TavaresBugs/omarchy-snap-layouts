@@ -1,4 +1,4 @@
--- The overlay's layer rule, for io.github.n0rthstar88.snap-layouts.
+-- The overlay's layer rules, for io.github.n0rthstar88.snap-layouts.
 --
 -- The overlay (the picker, the edge preview, the overview) animates itself. Hyprland
 -- also fades a layer surface out when it goes away, by default over about 150 ms, and
@@ -6,13 +6,31 @@
 -- window, with its ring and its shadow and a capture of the window that is a moment
 -- old. For those 150 ms it is drawn over the real window, which shows twice. Omarchy's
 -- own panels turn the fade off for the same reason (default/hypr/apps/omarchy-shell.lua).
+-- The strip the overview draws behind the bar (snap-layouts-bar) gets the same rule.
 --
 -- The plugin runs this with `hyprctl eval` at start and after a config reload, which
 -- starts the Lua side afresh and drops runtime rules. Loading it again is safe.
 
 snap_layouts = snap_layouts or {}
 
-if not snap_layouts.layer_rule then
-  snap_layouts.layer_rule = true
-  hl.layer_rule({ match = { namespace = "^snap-layouts$" }, no_anim = true, animation = "none" })
+-- `layer_rules` says which version of the rules this Lua side has, so one left by an
+-- earlier load of this file is topped up, not repeated. 1 only knew the overlay; 2 adds
+-- the strip. (A version 3 that blurred the strip is gone: the strip now draws the same
+-- blurred wallpaper as the backdrop, so Hyprland's blur is not needed.)
+local have = snap_layouts.layer_rules or 0
+
+if have < 2 then
+  hl.layer_rule({ match = { namespace = "^snap-layouts-bar$" }, no_anim = true, animation = "none" })
+  if not snap_layouts.layer_rule then
+    snap_layouts.layer_rule = true
+    hl.layer_rule({ match = { namespace = "^snap-layouts$" }, no_anim = true, animation = "none" })
+  end
+  snap_layouts.layer_rules = 2
+end
+
+-- An earlier version switched Hyprland's blur on for a clear bar while the overview was
+-- open and put it back after. If the shell was killed with it on, put it back now.
+if snap_layouts.blur_was ~= nil then
+  hl.config({ decoration = { blur = { enabled = snap_layouts.blur_was } } })
+  snap_layouts.blur_was = nil
 end

@@ -37,6 +37,7 @@ The plugin is three products with a switch each (`winsaico`, `overview`, `snap`,
 | `overview.js` | The overview's thumbnail layout and area, and geometric arrow-key navigation |
 | `navigation.js` | What a key does in the overview, given where the focus is |
 | `workspaces.js` | Omarchy's per-monitor workspace blocks, the strips, the drop preview |
+| `shape.js` | Corner radii from the windows' own rounding, ring thickness from their border, tint strengths by role, the assist panel's layout |
 | `motion.js` | Animation tokens, and the motion that follows from the windows' real geometry |
 | `dispatch.js` | The Lua sent to Hyprland (moving windows and workspaces, swapping, going to a workspace) |
 | `style.js` | The gap to the screen edge and the border width, read from Hyprland |
@@ -55,7 +56,7 @@ The plugin is three products with a switch each (`winsaico`, `overview`, `snap`,
 | `picker` | Layout picker opened by the shortcut |
 | `drag` | Picker shown because a window is held near the top |
 | `edge` | Preview of an edge/corner zone while dragging |
-| `assist` | Choosing windows for the remaining zones |
+| `assist` | Choosing windows for the remaining zones, on the overview's frosted wallpaper (`Backdrop`); the windows already placed are drawn in their zones from their captures (`ZoneOutline`) |
 | `overview` | Window overview (Alt+Tab) |
 
 ## Data flow for a drag
@@ -79,6 +80,12 @@ Nothing polls: a drag runs `hyprctl` twice (start, stop), and every sample betwe
 ## Choosing a window
 
 `focusWindow` does not focus at once. The overview holds the keyboard exclusively, and Hyprland ignores a request to focus another window until it lets go (asked too early, the focus stays where it was and returns to it when the overview closes). So the cards travel back to their windows first (`closeAnim`); `landed()` then lets go of the keyboard (`releasing`), `focusStep` sends the focus and asks again if Hyprland has not answered by the next look, and the overview goes away on the `activewindowv2` event for that window, after at most four looks. The window is raised under the card that sits exactly on it, so nothing shows twice. `lua/layer.lua` keeps Hyprland from fading the overlay out afterwards, which would draw the card's last frame over the real window for 150 ms.
+
+## The overview and the bar
+
+The overview covers the screen below the bar and leaves the bar to the bar. Its input region (`belowBar`) excludes the bar's strip, and the backdrop (`components/Backdrop.qml`) is the blurred wallpaper (`components/Wallpaper.qml`) from the bar's edge down. A surface on the Bottom layer (`snap-layouts-bar`), under the bar (Top) and the windows, draws the same wallpaper behind the bar, so a clear, a glassy or a solid bar all sit on the picture the backdrop shows and nothing needs to know which it is. `lua/layer.lua` keeps Hyprland from fading either surface out. A layer that holds the keyboard exclusively is sent all the pointer input by Hyprland whatever its input region says, so while the pointer is over the bar (`overBar`, from a `HoverHandler`) the overview lets go of the keyboard, the bar takes its clicks, and the overview takes the keyboard back when the pointer comes down.
+
+The bar and the strip agree. A workspace change from outside (a click in the bar, a key) is followed by the overview (`followWorkspace`); moving along the strip sends the monitor to that workspace (`syncWorkspace`, for the overview's own monitor only; the events it causes are ignored for 0.9 s so they do not bounce back). Choosing a window or a workspace keeps where the monitor is; dismissing the overview (`close()` without a choice) sends it back to where it was (`restoreWorkspace`).
 
 ## Modal overview
 

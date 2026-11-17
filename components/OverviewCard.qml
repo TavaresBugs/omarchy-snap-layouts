@@ -3,6 +3,7 @@ import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
 import "Util.js" as Util
 import "../lib/motion.js" as Motion
+import "../lib/shape.js" as Shape
 
 // One window in the overview: its picture in a ThumbFrame, the app icon sitting
 // on its bottom edge, and the title below it when selected. It knows nothing
@@ -43,15 +44,17 @@ Item {
     signal dragMoved(real sx, real sy)
     signal dropped(real sx, real sy)
 
-    readonly property int cornerRadius: 10
+    // On its window it has the window's corners; settled, the card's.
+    readonly property var shape: Shape.radii(Style.cornerRadius)
+    property int borderWidth: -1
 
     x: rect ? rect.rx + (rect.x - rect.rx) * travel : 0
     y: rect ? rect.ry + (rect.y - rect.ry) * travel : 0
     width: rect ? rect.rw + (rect.w - rect.rw) * travel : 0
     height: rect ? rect.rh + (rect.h - rect.rh) * travel : 0
     z: selected ? 10 : 0
-    opacity: (morph ? 1 : progress) * (dragged ? 0.35 : (selected ? 1 : 0.9))
-    Behavior on opacity { NumberAnimation { duration: 140 } }
+    opacity: (morph ? 1 : progress) * (dragged ? Shape.ALPHA.muted : (selected ? 1 : Shape.ALPHA.active))
+    Behavior on opacity { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.fade) } }
 
     // The selected card is lifted and a little larger, but only as far as the room
     // around it allows, and only as far as it has travelled: on its window (travel
@@ -59,14 +62,15 @@ Item {
     // around the window, so it does not jump when the overview goes away; settled in
     // the overview it gets the full emphasis. Nothing here depends on the layout.
     property real lift: selected ? 1 : 0
-    Behavior on lift { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+    Behavior on lift { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.settle); easing.type: Easing.OutCubic } }
     readonly property var room: Motion.emphasis(x, y, width, height, bounds)
     scale: 1 + (room.scale - 1) * lift * travel
     transform: Translate { y: -card.room.lift * card.lift * card.travel }
 
     ThumbFrame {
         anchors.fill: parent
-        radius: card.cornerRadius * card.travel
+        radius: Shape.between(card.shape.zone, card.shape.card, card.travel)
+        borderWidth: card.borderWidth
         emphasized: card.selected
         depth: card.travel
 
@@ -75,7 +79,7 @@ Item {
             toplevel: card.toplevel
             iconSource: card.client ? card.iconSource : ""
             cornerRadius: 0
-            backdrop: Util.withAlpha(Commons.Color.popups.background, 0.9)
+            backdrop: Util.withAlpha(Commons.Color.popups.background, Shape.ALPHA.placeholder)
         }
     }
 
@@ -99,12 +103,15 @@ Item {
         width: Math.max(parent.width, 200)
         horizontalAlignment: Text.AlignHCenter
         text: card.client ? String(card.client.title || card.client.class || "") : ""
-        color: Util.withAlpha(Commons.Color.popups.text, 0.9)
+        color: Util.withAlpha(Commons.Color.popups.text, 1)
+        // Over the blurred wallpaper, which can be as bright as the text.
+        style: Text.Outline
+        styleColor: Util.withAlpha(Commons.Color.background, Shape.ALPHA.outline)
         font.family: Qt.application.font.family
         font.pixelSize: Style.font.body
         elide: Text.ElideRight
         opacity: card.selected ? card.chrome : 0
-        Behavior on opacity { NumberAnimation { duration: 120 } }
+        Behavior on opacity { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.quick) } }
     }
 
     MouseArea {

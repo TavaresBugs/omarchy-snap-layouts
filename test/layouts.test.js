@@ -134,3 +134,17 @@ test("a nonsense count still gives one zone", () => {
     assert.equal(L.mosaicZones(0).length, 1);
     assert.equal(L.mosaicZones(NaN).length, 1);
 });
+
+test("a zone's frame is the zone plus the window's border all round", () => {
+    assert.deepEqual(L.frameRect({ x: 10, y: 20, w: 100, h: 50 }, 2), { x: 8, y: 18, w: 104, h: 54 });
+    assert.deepEqual(L.frameRect({ x: 10, y: 20, w: 100, h: 50 }, 0), { x: 10, y: 20, w: 100, h: 50 });
+    assert.deepEqual(L.frameRect({ x: 10, y: 20, w: 100, h: 50 }, undefined), { x: 10, y: 20, w: 100, h: 50 });
+});
+
+test("neighbouring frames touch or sit apart by the gap, never overlap", () => {
+    const monitor = { x: 0, y: 0, w: 1000, h: 600, reserved: [0, 0, 0, 0] };
+    const gaps = { outer: 2, inner: 4, border: 2 };
+    const a = L.frameRect(L.zoneScreenRect(monitor, gaps, L.INDEX.halves, 0), gaps.border);
+    const b = L.frameRect(L.zoneScreenRect(monitor, gaps, L.INDEX.halves, 1), gaps.border);
+    assert.ok(a.x + a.w <= b.x);
+});

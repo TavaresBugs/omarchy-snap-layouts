@@ -16,6 +16,9 @@ Item {
     property int cornerRadius: 10
     property color backdrop: "#99000000"    // shown until the capture arrives
     property int fallbackIconSize: 56
+    // Follow the window as it changes (a window still being moved into place), instead
+    // of taking one picture.
+    property bool live: false
 
     readonly property bool hasContent: capture.hasContent
 
@@ -39,7 +42,7 @@ Item {
             id: capture
             anchors.fill: parent
             captureSource: picture.toplevel && picture.toplevel.wayland ? picture.toplevel.wayland : null
-            live: false
+            live: picture.live
             paintCursor: false
         }
     }

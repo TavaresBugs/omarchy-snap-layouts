@@ -3,12 +3,19 @@ import QtQuick
 import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
 import "Util.js" as Util
+import "../lib/shape.js" as Shape
+import "../lib/motion.js" as Motion
 
 // The card of layout thumbnails at the top of the screen. Every zone of every
 // layout can be hovered and picked. Geometry comes from lib/layouts.js through
 // the properties below; this file only draws and reports what the pointer does.
 Rectangle {
     id: picker
+
+    // Every corner comes from lib/shape.js, from the windows' own rounding.
+    readonly property var shape: Shape.radii(Style.cornerRadius)
+    property int borderWidth: -1
+    readonly property var ring: Shape.ring(picker.borderWidth)
 
     property var layouts: []            // Layouts.LAYOUTS
     property int count: 0               // how many of them to show
@@ -27,15 +34,15 @@ Rectangle {
     y: card.y
     width: card.w
     height: card.h
-    radius: Style.cornerRadius + 10
-    color: Util.withAlpha(Commons.Color.popups.background, 0.96)
-    border.color: Util.withAlpha(Commons.Color.accent, 0.45)
-    border.width: 1
+    radius: picker.shape.panel
+    color: Util.withAlpha(Commons.Color.popups.background, Shape.ALPHA.solid)
+    border.color: Util.withAlpha(Commons.Color.accent, Shape.ALPHA.soft)
+    border.width: picker.ring.rim
     opacity: visible ? 1 : 0
     scale: visible ? 1 : 0.94
     transformOrigin: Item.Top
-    Behavior on opacity { NumberAnimation { duration: 150 } }
-    Behavior on scale { NumberAnimation { duration: 170; easing.type: Easing.OutBack } }
+    Behavior on opacity { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.fade) } }
+    Behavior on scale { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.pop); easing.type: Easing.OutBack } }
 
     // Swallow clicks on the card background.
     MouseArea {
@@ -54,14 +61,14 @@ Rectangle {
             y: r.y - picker.card.y
             width: r.w
             height: r.h
-            radius: Style.cornerRadius + 2
-            color: hot ? Util.withAlpha(Commons.Color.accent, 0.14)
-                       : Util.withAlpha(Commons.Color.popups.text, 0.05)
-            border.color: hot ? Util.withAlpha(Commons.Color.accent, 0.85)
-                              : Util.withAlpha(Commons.Color.popups.text, 0.14)
-            border.width: hot ? 2 : 1
-            Behavior on color { ColorAnimation { duration: 90 } }
-            Behavior on border.color { ColorAnimation { duration: 90 } }
+            radius: picker.shape.thumb
+            color: hot ? Util.withAlpha(Commons.Color.accent, Shape.ALPHA.tint)
+                       : Util.withAlpha(Commons.Color.popups.text, Shape.ALPHA.faint)
+            border.color: hot ? Util.withAlpha(Commons.Color.accent, Shape.ALPHA.active)
+                              : Util.withAlpha(Commons.Color.popups.text, Shape.ALPHA.line)
+            border.width: hot ? picker.ring.strong : picker.ring.rim
+            Behavior on color { ColorAnimation { duration: Style.duration(Motion.TOKENS.dur.hover) } }
+            Behavior on border.color { ColorAnimation { duration: Style.duration(Motion.TOKENS.dur.hover) } }
 
             Repeater {
                 model: picker.layouts[thumb.index].length
@@ -75,9 +82,9 @@ Rectangle {
                     y: zr.y
                     width: zr.w
                     height: zr.h
-                    radius: Math.max(3, Style.cornerRadius / 2 + 1)
-                    color: hot ? Commons.Color.accent : Util.withAlpha(Commons.Color.popups.text, 0.28)
-                    Behavior on color { ColorAnimation { duration: 80 } }
+                    radius: picker.shape.mini
+                    color: hot ? Commons.Color.accent : Util.withAlpha(Commons.Color.popups.text, Shape.ALPHA.muted)
+                    Behavior on color { ColorAnimation { duration: Style.duration(Motion.TOKENS.dur.hover) } }
 
                     MouseArea {
                         anchors.fill: parent

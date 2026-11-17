@@ -4,6 +4,7 @@ import qs.Commons // qmllint disable import
 import qs.Commons as Commons // qmllint disable import
 import "Util.js" as Util
 import "../lib/motion.js" as Motion
+import "../lib/shape.js" as Shape
 
 // The window overview (Alt+Tab view): a clean backdrop with every window as a
 // thumbnail. The backdrop starts below the bar, so the bar stays visible.
@@ -21,6 +22,11 @@ import "../lib/motion.js" as Motion
 Item {
     id: layer
 
+    // Every corner comes from lib/shape.js, from the windows' own rounding.
+    readonly property var shape: Shape.radii(Style.cornerRadius)
+    property int borderWidth: -1
+    readonly property var ring: Shape.ring(layer.borderWidth)
+
     property var rects: []
     property var clients: []
     property int selectedIndex: 0
@@ -30,7 +36,8 @@ Item {
     property var bounds: null           // the area windows can use, in this layer's coordinates
     property int topInset: 0            // height of the bar to leave uncovered
     property url wallpaper: ""
-    property real dim: 0.55
+    property real dim: Motion.TOKENS.dim
+    property real blur: Motion.TOKENS.blur
 
     // One strip per screen (hidden when empty), the main screen first and big,
     // the others small: [{ name, main, workspaceId, aspect, entries }].
@@ -120,8 +127,9 @@ Item {
             layer.moveRequested(c.address, target);
     }
 
-    // Wallpaper, dimmed, over the whole screen (the bar stays visible, dimmed like
-    // the rest). It reaches the edges, so no window border can show around it.
+    // Wallpaper, dimmed, over the screen below the bar (the bar is left alone; what is
+    // behind it is dimmed by a strip of its own, see SnapLayouts.qml). It reaches the
+    // edges, so no window border can show around it.
     // Quick: while the cards are still leaving their windows, the real ones are
     // already hidden behind it, so they aren't seen twice.
     Backdrop {
@@ -129,8 +137,10 @@ Item {
         opacity: layer.dimProgress
         topInset: layer.topInset
         base: Commons.Color.background
+        tint: Commons.Color.background
         wallpaper: layer.wallpaper
         dim: layer.dim
+        blur: layer.blur
     }
 
     // The strips: the main screen big, the others small, always in the same order.
@@ -156,18 +166,35 @@ Item {
                 spacing: 3
                 y: (band.height - height) / 2
 
-                Text {
-                    id: nameLabel
-                    text: screen.main ? screen.modelData.name + "  ·  " + qsTr("principal")
-                        : (nameArea.containsMouse ? screen.modelData.name + "  ·  " + qsTr("tornar principal") : screen.modelData.name)
-                    color: Util.withAlpha(Commons.Color.popups.text, screen.main || nameArea.containsMouse ? 0.85 : 0.6)
-                    font.family: Qt.application.font.family
-                    font.pixelSize: Style.font.body - 3
+                // The monitor's name on a small glass chip: the wallpaper behind is only
+                // blurred, so it can be as bright or as dark as the text, and the chip
+                // (the theme's background, see-through, with the theme's text on it)
+                // keeps the name readable on any of it. The main monitor's is the
+                // stronger; the others', which can be clicked to become the main one,
+                // lift when the pointer is over them.
+                Rectangle {
+                    id: nameChip
+                    width: nameLabel.implicitWidth + 18
+                    height: nameLabel.implicitHeight + 8
+                    radius: height / 2
+                    color: Util.withAlpha(Commons.Color.background, screen.main || nameArea.containsMouse ? Shape.ALPHA.glassStrong : Shape.ALPHA.glass)
+                    border.width: layer.ring.rim
+                    border.color: Util.withAlpha(Commons.Color.popups.text, screen.main || nameArea.containsMouse ? Shape.ALPHA.lineStrong : Shape.ALPHA.line)
+                    Behavior on color { ColorAnimation { duration: Style.duration(Motion.TOKENS.dur.quick) } }
+
+                    Text {
+                        id: nameLabel
+                        anchors.centerIn: parent
+                        text: screen.main ? screen.modelData.name + "  ·  " + qsTr("principal")
+                            : (nameArea.containsMouse ? screen.modelData.name + "  ·  " + qsTr("tornar principal") : screen.modelData.name)
+                        color: Util.withAlpha(Commons.Color.popups.text, screen.main || nameArea.containsMouse ? 1 : Shape.ALPHA.label)
+                        font.family: Qt.application.font.family
+                        font.pixelSize: Style.font.body - 3
+                    }
 
                     MouseArea {
                         id: nameArea
                         anchors.fill: parent
-                        anchors.margins: -4
                         enabled: !screen.main
                         hoverEnabled: true
                         cursorShape: screen.main ? Qt.ArrowCursor : Qt.PointingHandCursor
@@ -177,6 +204,7 @@ Item {
 
                 WorkspaceStrip {
                     id: strip
+                    borderWidth: layer.borderWidth
                     entries: screen.modelData.entries
                     selectedId: layer.workspaceId
                     aspect: screen.modelData.aspect
@@ -202,8 +230,8 @@ Item {
 
         ParallelAnimation {
             id: switchAnim
-            NumberAnimation { target: cards; property: "x"; from: layer.switchDir * 56; to: 0; duration: 240; easing.type: Easing.OutCubic }
-            NumberAnimation { target: cards; property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutQuad }
+            NumberAnimation { target: cards; property: "x"; from: layer.switchDir * 56; to: 0; duration: Style.duration(Motion.TOKENS.dur.slide); easing.type: Easing.OutCubic }
+            NumberAnimation { target: cards; property: "opacity"; from: 0; to: 1; duration: Style.duration(Motion.TOKENS.dur.slideFade); easing.type: Easing.OutQuad }
         }
 
         // A workspace with no windows.
@@ -211,7 +239,7 @@ Item {
             visible: layer.visible && layer.rects.length === 0
             anchors.centerIn: parent
             text: layer.emptyText
-            color: Util.withAlpha(Commons.Color.popups.text, 0.7)
+            color: Util.withAlpha(Commons.Color.popups.text, Shape.ALPHA.label)
             font.family: Qt.application.font.family
             font.pixelSize: Style.font.body + 3
             opacity: layer.progress
@@ -223,6 +251,7 @@ Item {
 
             OverviewCard {
                 required property int index
+                borderWidth: layer.borderWidth
                 rect: layer.rects[index]
                 client: layer.clients[index] ?? null
                 toplevel: client ? layer.toplevelFor(client.address) : null
@@ -254,13 +283,14 @@ Item {
         y: layer.dragPoint.y - height / 2
         // Smaller over a workspace, as if dropping into it.
         scale: layer.dropId > 0 ? 0.6 : 1
-        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-        opacity: 0.92
+        Behavior on scale { NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.quick); easing.type: Easing.OutCubic } }
+        opacity: Shape.ALPHA.active
         z: 100
 
         ThumbFrame {
             anchors.fill: parent
-            radius: 10
+            radius: layer.shape.card
+            borderWidth: layer.borderWidth
             emphasized: true
 
             WindowPicture {
@@ -268,7 +298,7 @@ Item {
                 toplevel: ghost.client ? layer.toplevelFor(ghost.client.address) : null
                 iconSource: ghost.client ? layer.iconFor(ghost.client) : ""
                 cornerRadius: 0
-                backdrop: Util.withAlpha(Commons.Color.popups.background, 0.9)
+                backdrop: Util.withAlpha(Commons.Color.popups.background, Shape.ALPHA.placeholder)
             }
         }
     }

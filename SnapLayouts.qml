@@ -21,6 +21,7 @@ import "lib/mode.js" as Mode
 import "lib/windows.js" as Windows
 import "lib/overview.js" as Overview
 import "lib/settings.js" as Settings
+import "lib/shape.js" as Shape
 import "lib/shortcuts.js" as Shortcuts
 import "lib/style.js" as SystemStyle
 import "lib/workspaces.js" as Workspaces
@@ -144,10 +145,23 @@ Item {
     // reason to change what the overview shows.
     property double ignoreWorkspaceUntil: 0
     property int followTarget: 0
+    // The strip and the bar agree: moving along the strip changes the workspace for real,
+    // as clicking it in the bar does. These keep track of that. `overviewOrigin` is the
+    // workspace the monitor was on when the overview opened (where Escape goes back to),
+    // `overviewSynced` the one it was last sent to, and `overviewChosen` whether the
+    // overview is ending because a window or a workspace was chosen, not dismissed.
+    property int overviewOrigin: 0
+    property int overviewSynced: 0
+    property bool overviewChosen: false
     property int overviewSwitchTick: 0
     property int overviewSwitchDir: 0
     // 0 = every window sits where it really is, 1 = settled in the overview.
     property real overviewT: 1
+    // The snap assist's backdrop comes in and goes out on its own, quickly.
+    property real assistT: root.mode === "assist" ? 1 : 0
+    Behavior on assistT {
+        NumberAnimation { duration: Style.duration(Motion.TOKENS.dur.settle); easing.type: Easing.OutCubic }
+    }
     NumberAnimation {
         id: overviewAnim
         target: root
@@ -197,11 +211,15 @@ Item {
         root.monitor = m;
         root.targetAddress = "";
         root.placedAddresses = [];
+        root.placedZones = ({});
         root.assistPage = 0;
         root.closing = false;
         root.closingIntoWorkspace = false;
         root.stripFocus = false;
         root.overviewWorkspace = m.workspaceId;
+        root.overviewOrigin = m.workspaceId;
+        root.overviewSynced = m.workspaceId;
+        root.overviewChosen = false;
         root.refreshOverview(true);
         root.mode = "overview";
         root.enterModal();
@@ -270,6 +288,33 @@ Item {
         var dir = Workspaces.direction(root.workspaceScreens, root.overviewWorkspace, id);
         root.overviewWorkspace = id;
         root.refreshOverview(false, dir);
+        root.syncWorkspace(id);
+    }
+
+    // Send the monitor to a workspace, if it is this monitor's: the bar then agrees with
+    // the strip. (A workspace of the other monitor is only looked at.)
+    function syncWorkspace(id) {
+        var owner = Workspaces.monitorFor(id, Monitors.indexById(root.monitorsIpc));
+        if (!owner || !root.monitor || owner.name !== root.monitor.name || id === root.overviewSynced)
+            return;
+        root.overviewSynced = id;
+        // The change is ours: the overview must not follow it back (see followWorkspace).
+        root.ignoreWorkspaceUntil = Date.now() + 900;
+        var lua = Dispatch.goToWorkspace(id, Workspaces.slotOf(id), owner.name);
+        if (lua !== "")
+            Quickshell.execDetached(["hyprctl", "eval", lua]);
+    }
+
+    // The overview was dismissed: the monitor goes back to where it was.
+    function restoreWorkspace() {
+        if (root.overviewSynced === root.overviewOrigin || !root.monitor)
+            return;
+        var id = root.overviewOrigin;
+        root.overviewSynced = id;
+        root.ignoreWorkspaceUntil = Date.now() + 900;
+        var lua = Dispatch.goToWorkspace(id, Workspaces.slotOf(id), root.monitor.name);
+        if (lua !== "")
+            Quickshell.execDetached(["hyprctl", "eval", lua]);
     }
 
     function stepOverviewWorkspace(delta) {
@@ -367,6 +412,7 @@ Item {
     function goToWorkspace(id) {
         if (root.closing)
             return;
+        root.overviewChosen = true;
         root.closingIntoWorkspace = id === root.overviewWorkspace;
         var owner = Workspaces.monitorFor(id, Monitors.indexById(root.monitorsIpc));
         var lua = Dispatch.goToWorkspace(id, Workspaces.slotOf(id), owner ? owner.name : "");
@@ -460,6 +506,7 @@ Item {
     function focusWindow(address) {
         if (root.closing)
             return;
+        root.overviewChosen = true;
         root.closingIntoWorkspace = true;
         var c = root.clientByAddress(address);
         var sel = "address:" + address;
@@ -497,6 +544,11 @@ Item {
     property var pendingFocus: null
     // The overview has let go of the keyboard so that the focus can move.
     property bool releasing: false
+    // The pointer is over the bar, which the overview leaves to the bar. While a layer
+    // holds the keyboard exclusively Hyprland sends it all the pointer input, the bar's
+    // strip included, so the overview lets go of the keyboard while the pointer is on the
+    // bar (the keys then go to the window behind) and takes it back when it comes down.
+    property bool overBar: false
 
     // The cards are back on their windows.
     function landed() {
@@ -533,6 +585,8 @@ Item {
     property int assistLayout: -1
     property var assistZones: []
     property var placedAddresses: []
+    // The window placed in each zone of the assist's layout: { zoneIndex: address }.
+    property var placedZones: ({})
     readonly property int assistZone: assistZones.length > 0 ? assistZones[0] : -1
     property var candidates: []
 
@@ -572,11 +626,16 @@ Item {
         return { x: r.x - root.monitor.x, y: r.y - root.monitor.y, w: r.w, h: r.h };
     }
 
+    // A zone as a window really fills it, border included, in the overlay's coordinates.
+    function zoneFrame(layoutIndex, zoneIndex) {
+        return root.localRect(Layouts.frameRect(root.zoneScreenRect(layoutIndex, zoneIndex), root.gaps.border));
+    }
+
     // The zone to tint while hovering a layout, or null.
     function previewZone() {
         if (root.mode === "assist" || root.hoverZone < 0 || root.hoverLayout < 0 || !root.monitor)
             return null;
-        return root.localRect(root.zoneScreenRect(root.hoverLayout, root.hoverZone));
+        return root.zoneFrame(root.hoverLayout, root.hoverZone);
     }
 
     // Outlines of the zones of the chosen layout that already hold a window.
@@ -586,7 +645,8 @@ Item {
         var out = [];
         for (var j = 0; j < root.layouts[root.assistLayout].length; j++)
             if (root.assistZones.indexOf(j) === -1)
-                out.push(root.localRect(root.zoneScreenRect(root.assistLayout, j)));
+                out.push(Object.assign(root.zoneFrame(root.assistLayout, j),
+                    { address: root.placedZones[j] || "" }));
         return out;
     }
 
@@ -595,7 +655,7 @@ Item {
     function assistZoneRect() {
         if (root.mode !== "assist" || root.assistZone < 0 || !root.monitor)
             return null;
-        return root.localRect(root.zoneScreenRect(root.assistLayout, root.assistZone));
+        return root.zoneFrame(root.assistLayout, root.assistZone);
     }
 
     function assistPageCount() {
@@ -611,6 +671,13 @@ Item {
         return root.candidates.slice(start, start + root.assistPageSize);
     }
 
+    // The panel's padding and the heights of its title and pager, from the theme's spacing.
+    readonly property var assistMetrics: ({
+        pad: Style.spacing.panelPadding + Style.spacing.md,
+        title: Style.font.body + 2,
+        pager: Style.controlHeight
+    })
+
     // The thumbnails use the same row layout as the overview, inside the panel.
     function assistCardRects() {
         var zone = root.assistZoneRect();
@@ -619,8 +686,7 @@ Item {
         var windows = root.assistPageItems().map(function(c) {
             return { at: c.at, size: c.size, monitor: root.monitorById(c.monitor) || root.monitor };
         });
-        var bottom = root.assistPageCount() > 1 ? 56 : 28;
-        var area = { x: 24, y: 70, w: zone.w - 48, h: zone.h - 70 - bottom };
+        var area = Shape.panelArea(zone.w, zone.h, root.assistPageCount() > 1, root.assistMetrics);
         return Overview.layoutRows(windows, area, Overview.ASSIST_LAYOUT);
     }
 
@@ -717,6 +783,9 @@ Item {
         lua.push("hl.dispatch(hl.dsp.window.bring_to_top())");
         Quickshell.execDetached(["hyprctl", "eval", lua.join("; ")]);
         root.placedAddresses = root.placedAddresses.concat([address]);
+        var zones = Object.assign({}, root.placedZones);
+        zones[zoneIndex] = address;
+        root.placedZones = zones;
     }
 
     // ---------- Flow ----------
@@ -740,6 +809,8 @@ Item {
         if (root.mode === "overview") {
             if (root.closing)
                 return;
+            if (!root.overviewChosen)
+                root.restoreWorkspace();
             root.closing = true;
             overviewAnim.stop();
             closeAnim.restart();
@@ -755,6 +826,7 @@ Item {
         focusStep.stop();
         root.pendingFocus = null;
         root.releasing = false;
+        root.overBar = false;
         root.stripFocus = false;
         root.leaveModal();
         root.mode = "";
@@ -765,6 +837,7 @@ Item {
         root.assistLayout = -1;
         root.assistZones = [];
         root.placedAddresses = [];
+        root.placedZones = ({});
         root.candidates = [];
         if (root.shell && typeof root.shell.hide === "function")
             root.shell.hide(root.pluginId);
@@ -791,6 +864,7 @@ Item {
             return;
         }
         root.placedAddresses = [];
+        root.placedZones = ({});
         root.placeWindow(root.targetAddress, layoutIndex, zoneIndex);
         var rest = [];
         for (var j = 0; j < root.layouts[layoutIndex].length; j++)
@@ -862,6 +936,12 @@ Item {
                 else if (root.snapshotReason === "overview-follow" && root.mode === "overview" && !root.closing) {
                     var dir = Workspaces.direction(root.workspaceScreens, root.overviewWorkspace, root.followTarget);
                     root.overviewWorkspace = root.followTarget;
+                    // Someone else moved the monitor (the bar, a key): that is where it is now.
+                    var mover = Workspaces.monitorFor(root.followTarget, Monitors.indexById(root.monitorsIpc));
+                    if (mover && root.monitor && mover.name === root.monitor.name) {
+                        root.overviewOrigin = root.followTarget;
+                        root.overviewSynced = root.followTarget;
+                    }
                     root.refreshAfterChange(dir);
                 }
             }
@@ -1439,6 +1519,70 @@ Item {
         sourceComponent: overlayComponent
     }
 
+    // The bar is left to the bar: the overlay does not cover it, tint it or take its
+    // clicks. What is behind it is the same blurred wallpaper as the rest of the screen,
+    // drawn by this strip on the Bottom layer, under the bar (which is on Top) and the
+    // windows. Whatever the bar is (clear, glassy or solid) it then sits on the picture
+    // the backdrop shows, with no seam: a clear bar shows it as it is, a glassy one
+    // blurs it more, a solid one covers it.
+    Loader {
+        active: (root.mode === "overview" || root.mode === "assist") && root.monitor !== null && root.monitor.reserved[1] > 0
+        sourceComponent: barBackdropComponent
+    }
+
+    readonly property url wallpaperSource: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/current/background"
+
+    Component {
+        id: barBackdropComponent
+
+        PanelWindow { // qmllint disable uncreatable-type
+            screen: {
+                var screens = Quickshell.screens;
+                for (var i = 0; i < screens.length; i++)
+                    if (screens[i].name === root.monitor.name)
+                        return screens[i];
+                return screens.length > 0 ? screens[0] : null;
+            }
+            anchors {
+                top: true
+                right: true
+                left: true
+            }
+            // A pixel more than the bar: its height times the scale is not a whole number
+            // of pixels, and the row left over would show the desktop undimmed.
+            implicitHeight: root.monitor.reserved[1] + 1
+            color: "transparent"
+            exclusionMode: ExclusionMode.Ignore
+            WlrLayershell.namespace: "snap-layouts-bar"
+            WlrLayershell.layer: WlrLayer.Bottom
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            mask: Region {}
+
+            Item {
+                anchors.fill: parent
+                clip: true
+                // Comes in with the backdrop.
+                opacity: root.mode === "assist" ? root.assistT
+                    : Motion.smoothstep(Math.min(1, root.overviewT * Motion.TOKENS.dimSpeed))
+
+                // The whole screen's wallpaper, of which the top is wanted.
+                Wallpaper {
+                    width: root.monitor.w
+                    height: root.monitor.h
+                    base: Commons.Color.background
+                    source: root.wallpaperSource
+                    blur: Motion.TOKENS.blur
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: Commons.Color.background
+                    opacity: Motion.TOKENS.dim
+                }
+            }
+        }
+    }
+
     Component {
         id: overlayComponent
 
@@ -1466,12 +1610,23 @@ Item {
             WlrLayershell.layer: (root.mode === "overview"
                     && !(root.activeIpc && Number(root.activeIpc.fullscreen) > 0))
                 ? WlrLayer.Top : WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: (root.mode === "drag" || root.mode === "edge" || root.releasing) ? WlrKeyboardFocus.None : WlrKeyboardFocus.Exclusive
+            WlrLayershell.keyboardFocus: (root.mode === "drag" || root.mode === "edge" || root.releasing || (root.mode === "overview" && root.overBar)) ? WlrKeyboardFocus.None : WlrKeyboardFocus.Exclusive
             // While a window is being dragged the overlay must not take the pointer.
-            mask: (root.mode === "drag" || root.mode === "edge") ? noInput : null
+            // The overview leaves the bar to the bar: the strip it occupies takes no
+            // pointer input from this surface, so the workspaces, the clock and the rest
+            // of the bar can be clicked as usual (the backdrop does not dim it either).
+            mask: (root.mode === "drag" || root.mode === "edge") ? noInput
+                : (root.mode === "overview" ? belowBar : null)
 
             Region {
                 id: noInput
+            }
+
+            Region {
+                id: belowBar
+                y: root.monitor ? root.monitor.reserved[1] : 0
+                width: surface.width
+                height: Math.max(0, surface.height - y)
             }
 
             Item {
@@ -1500,6 +1655,12 @@ Item {
                     }
                 }
 
+                // Where the pointer is, to tell when it is over the bar (see overBar).
+                HoverHandler {
+                    onPointChanged: root.overBar = root.mode === "overview"
+                        && point.position.y < (root.monitor ? root.monitor.reserved[1] : 0)
+                }
+
                 // Click outside the card or the assist panel to cancel.
                 MouseArea {
                     anchors.fill: parent
@@ -1507,21 +1668,29 @@ Item {
                     onClicked: root.close()
                 }
 
-                // Snap assist dims the screen; filled zones stay outlined.
-                Rectangle {
+                // Snap assist: the same frosted wallpaper as the overview, over the screen
+                // below the bar. The windows already placed show in their zones (below).
+                Backdrop {
                     anchors.fill: parent
-                    visible: root.mode === "assist"
-                    color: "black"
-                    opacity: 0.35
+                    visible: root.mode === "assist" || root.assistT > 0
+                    opacity: root.assistT
+                    topInset: root.monitor ? root.monitor.reserved[1] : 0
+                    base: Commons.Color.background
+                    tint: Commons.Color.background
+                    wallpaper: root.wallpaperSource
+                    dim: Motion.TOKENS.dim
+                    blur: Motion.TOKENS.blur
                 }
 
                 // Where the window will land.
                 ZonePreview {
+                    borderWidth: root.gaps.border
                     zone: root.previewZone()
                 }
 
                 OverviewLayer {
                     anchors.fill: parent
+                    borderWidth: root.gaps.border
                     visible: root.mode === "overview"
                     rects: root.overviewRects
                     clients: root.candidates
@@ -1531,7 +1700,7 @@ Item {
                     morph: root.overviewMorph
                     progress: root.overviewT
                     topInset: root.monitor ? root.monitor.reserved[1] : 0
-                    wallpaper: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/current/background"
+                    wallpaper: root.wallpaperSource
                     toplevelFor: root.toplevelFor
                     iconFor: root.iconFor
                     screens: root.workspaceScreens
@@ -1550,6 +1719,7 @@ Item {
                 }
 
                 LayoutPicker {
+                    borderWidth: root.gaps.border
                     visible: root.mode === "picker" || root.mode === "drag"
                     layouts: root.layouts
                     count: root.pickerCount
@@ -1578,11 +1748,19 @@ Item {
 
                     ZoneOutline {
                         required property int index
+                        borderWidth: root.gaps.border
                         zone: root.filledZones()[index]
+                        // The window just placed has the focus, as it has its accent border.
+                        emphasized: !!zone && zone.address !== ""
+                            && zone.address === root.placedAddresses[root.placedAddresses.length - 1]
+                        toplevel: zone && zone.address ? root.toplevelFor(zone.address) : null
+                        iconSource: zone && zone.address ? root.iconFor(root.clientByAddress(zone.address)) : ""
                     }
                 }
 
                 AssistPanel {
+                    borderWidth: root.gaps.border
+                    metrics: root.assistMetrics
                     zone: root.assistZoneRect()
                     clients: root.assistPageItems()
                     rects: root.assistCardRects()
